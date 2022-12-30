@@ -2,7 +2,6 @@ package runtimelua
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 
@@ -17,12 +16,21 @@ import (
 type Module interface {
 	Name() string
 	Open() lua.LGFunction
+	Initialize(*zap.Logger)
 }
 
 type RuntimeModule interface {
 	Module
 	// Provide Initialization
-	Initialize(chan event.Event, *lua.LState)
+	InitializeRuntime(module.Runtime)
+}
+
+type ScriptModule interface {
+	Reload() error
+
+	Hotfix(name string) error
+
+	MD5Sum() map[string]string
 }
 
 type Runtime struct {
@@ -33,7 +41,7 @@ type Runtime struct {
 
 	script      string
 	preloads    map[string]Module
-	entry       *lua.LTable
+	auxlibs     map[string]lua.LGFunction
 	ctx         context.Context
 	ctxCancelFn context.CancelFunc
 	scripts     *module.ScriptModule
@@ -58,6 +66,7 @@ func NewRuntime(options ...Option) *Runtime {
 		ctxCancelFn: ctxCancelFn,
 		wg:          &sync.WaitGroup{},
 		preloads:    make(map[string]Module),
+		auxlibs:     make(map[string]lua.LGFunction),
 		eventQueue:  make(chan event.Event, 128),
 	}
 	for _, option := range options {
@@ -86,6 +95,10 @@ func NewRuntimeWithConfig(config Config, options ...Option) *Runtime {
 	return r
 }
 
+func (r *Runtime) Script() ScriptModule {
+	return r.scripts
+}
+
 func (r *Runtime) EventQueue() chan event.Event {
 	return r.eventQueue
 }
@@ -99,7 +112,8 @@ func (r *Runtime) Wait() {
 }
 
 func (r *Runtime) Startup() {
-	r.scripts = module.NewScriptModule(r.logger)
+	r.scripts = module.NewScriptModule(r)
+	r.scripts.Initialize(r.logger)
 	for name, lib := range map[string]lua.LGFunction{
 		lua.BaseLibName:      lua.OpenBase,
 		lua.TabLibName:       lua.OpenTable,
@@ -108,24 +122,23 @@ func (r *Runtime) Startup() {
 		lua.StringLibName:    lua.OpenString,
 		lua.MathLibName:      lua.OpenMath,
 		lua.CoroutineLibName: lua.OpenCoroutine,
-		auxlib.Bit32LibName:  auxlib.OpenBit32,
-		auxlib.JsonLibName:   auxlib.OpenJson,
-		auxlib.Bit64LibName:  auxlib.OpenBit64,
-		auxlib.Base64LibName: auxlib.OpenBase64,
-		auxlib.UUIDLibName:   auxlib.OpenUUID,
-		auxlib.MD5LibName:    auxlib.OpenMD5,
-		auxlib.Ase128LibName: auxlib.OpenAes128,
-		auxlib.Ase256LibName: auxlib.OpenAes256,
 		lua.LoadLibName:      r.scripts.OpenPackage(),
 	} {
 		r.vm.Push(r.vm.NewFunction(lib))
 		r.vm.Push(lua.LString(name))
 		r.vm.Call(1, 0)
-		log.Println("load lib", name)
+		r.logger.Debug("load", zap.String("lib", name))
+	}
+	for name, lib := range map[string]lua.LGFunction{
+		auxlib.JsonLibName: auxlib.OpenJson,
+	} {
+		r.vm.PreloadModule(name, lib)
+		r.logger.Debug("preload", zap.String("lib", name))
 	}
 	for name, module := range r.preloads {
 		r.vm.PreloadModule(name, module.Open())
-		log.Println("preload module", name)
+		module.Initialize(r.logger)
+		r.logger.Debug("preload", zap.String("module", name))
 	}
 	r.wg.Add(1)
 	go r.process()
@@ -135,13 +148,7 @@ func (r *Runtime) Startup() {
 	if err := r.vm.GPCall(req.GFunction, init); err != nil {
 		r.logger.Error("script", zap.Error(err))
 		r.ctxCancelFn()
-	} else if entry, ok := r.vm.Get(-1).(*lua.LTable); ok {
-		r.entry = entry
-	} else {
-		r.entry = r.vm.CreateTable(0, 0)
-		r.vm.SetGlobal(r.script, r.entry)
 	}
-	r.logger.Info("runtime", zap.String("entry", r.script))
 }
 
 func (r *Runtime) process() {
@@ -172,8 +179,15 @@ IncommingLoop:
 			}
 			eventQueue, eventSwapQueue = eventSwapQueue, eventQueue
 			r.Unlock()
+		case <-time.After(time.Second):
+			r.logger.Debug("event queue tick",
+				zap.Int("total", len(eventQueue)),
+			)
 		case e = <-r.eventQueue:
 			eventQueue = append(eventQueue, e)
+			r.logger.Debug("event queue received",
+				zap.Int("total", len(eventQueue)),
+			)
 		}
 	}
 	r.wg.Done()

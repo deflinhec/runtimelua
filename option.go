@@ -3,6 +3,7 @@ package runtimelua
 import (
 	"context"
 
+	"github.com/deflinhec/runtimelua/auxlib"
 	"github.com/deflinhec/runtimelua/module"
 	"go.uber.org/zap"
 )
@@ -73,7 +74,71 @@ func WithModule(mod Module) Option {
 
 func WithRuntimeModule(mod RuntimeModule) Option {
 	return newOption(func(r *Runtime) {
-		mod.Initialize(r.eventQueue, r.vm)
 		r.preloads[mod.Name()] = mod
+		mod.InitializeRuntime(r)
+	})
+}
+
+func WithLibJson() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.JsonLibName
+		lib := auxlib.OpenJson
+		r.auxlibs[name] = lib
+	})
+}
+
+func WithLibAes256() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.Ase256LibName
+		lib := auxlib.OpenAes256
+		r.auxlibs[name] = lib
+	})
+}
+
+func WithLibAes128() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.Ase128LibName
+		lib := auxlib.OpenAes128
+		r.auxlibs[name] = lib
+	})
+}
+
+func WithLibMD5() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.MD5LibName
+		lib := auxlib.OpenMD5
+		r.auxlibs[name] = lib
+	})
+}
+
+func WithLibUUID() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.UUIDLibName
+		lib := auxlib.OpenUUID
+		r.auxlibs[name] = lib
+	})
+}
+
+func WithLibBase64() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.Base64LibName
+		lib := auxlib.OpenBase64
+		r.auxlibs[name] = lib
+	})
+}
+
+func WithLibBit32() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.Bit32LibName
+		lib := auxlib.OpenBit32
+		r.auxlibs[name] = lib
+	})
+}
+
+func WithLibBit64() Option {
+	return newOption(func(r *Runtime) {
+		name := auxlib.Bit64LibName
+		lib := auxlib.OpenBit64
+		r.auxlibs[name] = lib
 	})
 }

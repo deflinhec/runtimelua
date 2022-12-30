@@ -2,14 +2,17 @@ package module
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/deflinhec/runtimelua/event"
 	"github.com/hashicorp/go-multierror"
 	lua "github.com/yuin/gopher-lua"
 	"go.uber.org/zap"
@@ -20,6 +23,11 @@ type fileCache struct {
 	Name    string
 	Path    string
 	Content []byte
+}
+
+func (m *fileCache) MD5Sum() string {
+	b := md5.Sum(m.Content)
+	return hex.EncodeToString(b[:])
 }
 
 func (m *fileCache) load() error {
@@ -59,33 +67,98 @@ func (m *fileCache) hotfix(l *lua.LState) error {
 }
 
 type ScriptModule struct {
-	logger  *zap.Logger
+	RuntimeModule
 	modules map[string]*fileCache
+	vm      *lua.LState
 }
 
-func NewScriptModule(logger *zap.Logger) *ScriptModule {
-	m := &ScriptModule{
-		logger: logger.With(
-			zap.String("module", "scripts"),
-		),
+func NewScriptModule(runtime Runtime) *ScriptModule {
+	return &ScriptModule{
+		RuntimeModule: RuntimeModule{
+			Module: Module{
+				name: "script",
+			},
+			runtime: runtime,
+		},
 		modules: make(map[string]*fileCache),
 	}
-	return m.load()
 }
 
-func (c *ScriptModule) Reload(l *lua.LState) error {
-	var result error
-	for _, module := range c.load().modules {
-		if err := module.hotfix(l); err != nil {
-			result = multierror.Append(result, err)
+func (m *ScriptModule) Initialize(logger *zap.Logger) {
+	m.logger = logger.With(zap.String("module", m.name))
+	m.logger.Debug("config", zap.String("LuaPath", lua.LuaLDir))
+	m.logger.Debug("load", zap.Int("count", len(m.load())))
+}
+
+func (m *ScriptModule) load() []string {
+	scanned := make([]string, 0)
+	for _, path := range scan(lua.LuaLDir) {
+		if strings.ToLower(filepath.Ext(path)) != ".lua" {
+			continue
+		}
+
+		module := &fileCache{
+			Path: path,
+		}
+		if err := module.load(); err != nil {
+			continue
+		}
+		if _, ok := m.modules[module.Name]; !ok {
+			m.modules[module.Name] = module
+			scanned = append(scanned, module.Name)
+			m.logger.Debug("find", zap.String("file", module.Name))
+		} else if m.modules[module.Name].MD5Sum() != module.MD5Sum() {
+			m.modules[module.Name] = module
+			scanned = append(scanned, module.Name)
+			m.logger.Debug("find", zap.String("file", module.Name))
 		}
 	}
-	return result
+	return scanned
 }
 
-func (c *ScriptModule) Hotfix(l *lua.LState, name string) error {
-	if module, ok := c.modules[name]; ok {
-		return module.hotfix(l)
+func (m *ScriptModule) MD5Sum() map[string]string {
+	md5sum := make(map[string]string)
+	for name, cache := range m.modules {
+		md5sum[name] = cache.MD5Sum()
+	}
+	return md5sum
+}
+
+func (m *ScriptModule) Reload() error {
+	scanned := m.load()
+	modules := make([]*fileCache, 0, len(m.modules))
+	for _, module := range m.modules {
+		modules = append(modules, module)
+	}
+	result := make(chan error)
+	e := &hotFixEvent{
+		Modules: modules,
+		logger: m.logger.With(
+			zap.String("operate", "reload"),
+			zap.Int("sum_files", len(m.modules)),
+			zap.Int("new_files", len(scanned)),
+		),
+		ReturnCh: result,
+		VM:       m.vm,
+	}
+	m.runtime.EventQueue() <- e
+	return <-result
+}
+
+func (m *ScriptModule) Hotfix(name string) error {
+	if module, ok := m.modules[name]; ok {
+		result := make(chan error)
+		e := &hotFixEvent{
+			Modules: []*fileCache{module},
+			logger: m.logger.With(
+				zap.String("operate", "hotfix"),
+				zap.String("script", name),
+			),
+			ReturnCh: result,
+			VM:       m.vm,
+		}
+		m.runtime.EventQueue() <- e
+		return <-result
 	}
 	return errors.New("file not found")
 }
@@ -107,26 +180,6 @@ func scan(path string) []string {
 		return []string{}
 	}
 	return paths
-}
-
-func (c *ScriptModule) load() *ScriptModule {
-	log.Println("[LuaPath]", lua.LuaLDir)
-	for _, path := range scan(lua.LuaLDir) {
-		if strings.ToLower(filepath.Ext(path)) != ".lua" {
-			continue
-		}
-		if _, ok := c.modules[path]; !ok {
-			module := &fileCache{
-				Path: path,
-			}
-			if err := module.load(); err != nil {
-				continue
-			}
-			c.modules[module.Name] = module
-			log.Println("[LuaScript]", module.Name)
-		}
-	}
-	return c
 }
 
 const emptyLString lua.LString = lua.LString("")
@@ -183,13 +236,13 @@ func loSeeAll(L *lua.LState) int {
 	return 0
 }
 
-func (c *ScriptModule) OpenPackage() lua.LGFunction {
+func (m *ScriptModule) OpenPackage() lua.LGFunction {
 	return func(L *lua.LState) int {
 		loLoaderCache := func(L *lua.LState) int {
 			name := L.CheckString(1)
 			// Make paths Lua friendly.
 			name = strings.Replace(name, string(os.PathSeparator), ".", -1)
-			if module, ok := c.modules[name]; ok {
+			if module, ok := m.modules[name]; ok {
 				lfunc, err := L.Load(bytes.NewReader(module.Content), module.Path)
 				if err != nil {
 					L.RaiseError(err.Error())
@@ -219,6 +272,38 @@ func (c *ScriptModule) OpenPackage() lua.LGFunction {
 		L.SetField(packagemod, "cpath", emptyLString)
 
 		L.Push(packagemod)
+		m.vm = L
 		return 1
 	}
+}
+
+type hotFixEvent struct {
+	event.StateEvent
+	logger   *zap.Logger
+	VM       *lua.LState
+	Modules  []*fileCache
+	ReturnCh chan error
+}
+
+func (e *hotFixEvent) Update(time.Duration) error {
+	switch event.State(e.Load()) {
+	case event.INITIALIZE:
+		var errs error
+		defer e.Store(uint32(event.COMPLETE))
+		for _, module := range e.Modules {
+			if err := module.hotfix(e.VM); err != nil {
+				e.logger.Warn("cannot perform hotfix",
+					zap.String("module", module.Name),
+					zap.String("path", module.Path),
+				)
+				errs = multierror.Append(errs, err)
+				continue
+			}
+			e.logger.Info("success",
+				zap.String("module", module.Name),
+			)
+		}
+		e.ReturnCh <- errs
+	}
+	return nil
 }
