@@ -165,11 +165,12 @@ func (m *httpModule) request_async(l *lua.LState) int {
 		requestBody = strings.NewReader(body)
 	}
 
-	ctx, _ := context.WithTimeout(l.Context(), time.Duration(timeoutMs)*time.Millisecond)
+	ctx, ctxCancelFn := context.WithTimeout(l.Context(), time.Duration(timeoutMs)*time.Millisecond)
 
 	// Prepare the request.
 	req, err := http.NewRequestWithContext(ctx, method, url, requestBody)
 	if err != nil {
+		ctxCancelFn()
 		l.RaiseError("HTTP request error: %v", err.Error())
 		return 0
 	}
@@ -178,16 +179,18 @@ func (m *httpModule) request_async(l *lua.LState) int {
 	for k, v := range httpHeaders {
 		vs, ok := v.(string)
 		if !ok {
+			ctxCancelFn()
 			l.RaiseError("HTTP header values must be strings")
 			return 0
 		}
 		req.Header.Add(k, vs)
 	}
 	m.runtime.EventQueue() <- &httpRequestEvent{
-		Client:  m.Client,
-		Request: req,
-		VM:      l,
-		Func:    fn,
+		ctxCancelFn: ctxCancelFn,
+		Client:      m.Client,
+		Request:     req,
+		VM:          l,
+		Func:        fn,
 	}
 	return 0
 }
@@ -196,10 +199,11 @@ type httpRequestEvent struct {
 	event.StateEvent
 	*http.Request
 	http.Client
-	VM   *lua.LState
-	Func *lua.LFunction
-	resp *http.Response
-	err  error
+	ctxCancelFn context.CancelFunc
+	VM          *lua.LState
+	Func        *lua.LFunction
+	resp        *http.Response
+	err         error
 }
 
 func (e *httpRequestEvent) Update(time.Duration) error {
@@ -219,6 +223,7 @@ func (e *httpRequestEvent) Update(time.Duration) error {
 		var body []byte
 		var headers map[string]interface{}
 		defer e.Store(uint32(event.COMPLETE))
+		defer e.ctxCancelFn()
 		for headers != nil {
 			if e.err != nil {
 				break

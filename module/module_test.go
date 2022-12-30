@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	lua "github.com/yuin/gopher-lua"
 	"go.uber.org/multierr"
+	"go.uber.org/zap"
 )
 
 func newRuntimeWithModules(t *testing.T, modules map[string]string,
@@ -55,6 +56,10 @@ func (m *TestingModule) fatal(l *lua.LState) int {
 	m.Unlock()
 	go m.cancel()
 	return 0
+}
+
+func (m *TestingModule) Initialize(*zap.Logger) {
+
 }
 
 func (m *TestingModule) done(l *lua.LState) int {

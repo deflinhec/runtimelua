@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,7 +109,7 @@ func scan(path string) []string {
 }
 
 func (c *ScriptModule) load() *ScriptModule {
-	log.Println("[LuaPath]", lua.LuaLDir)
+	c.logger.Debug("config", zap.String("LuaPath", lua.LuaLDir))
 	for _, path := range scan(lua.LuaLDir) {
 		if strings.ToLower(filepath.Ext(path)) != ".lua" {
 			continue
@@ -123,7 +122,7 @@ func (c *ScriptModule) load() *ScriptModule {
 				continue
 			}
 			c.modules[module.Name] = module
-			log.Println("[LuaScript]", module.Name)
+			c.logger.Debug("find", zap.String("file", module.Name))
 		}
 	}
 	return c
