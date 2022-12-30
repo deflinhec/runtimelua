@@ -25,6 +25,14 @@ type RuntimeModule interface {
 	InitializeRuntime(module.Runtime)
 }
 
+type ScriptModule interface {
+	Reload() error
+
+	Hotfix(name string) error
+
+	MD5Sum() map[string]string
+}
+
 type Runtime struct {
 	sync.Mutex
 	logger *zap.Logger
@@ -87,6 +95,10 @@ func NewRuntimeWithConfig(config Config, options ...Option) *Runtime {
 	return r
 }
 
+func (r *Runtime) Script() ScriptModule {
+	return r.scripts
+}
+
 func (r *Runtime) EventQueue() chan event.Event {
 	return r.eventQueue
 }
@@ -100,7 +112,8 @@ func (r *Runtime) Wait() {
 }
 
 func (r *Runtime) Startup() {
-	r.scripts = module.NewScriptModule(r.logger)
+	r.scripts = module.NewScriptModule(r)
+	r.scripts.Initialize(r.logger)
 	for name, lib := range map[string]lua.LGFunction{
 		lua.BaseLibName:      lua.OpenBase,
 		lua.TabLibName:       lua.OpenTable,
