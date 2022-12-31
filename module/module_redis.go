@@ -19,31 +19,6 @@ import (
 
 var rdbs sync.Map
 
-type pubSubEvent struct {
-	event.TimerEvent
-}
-
-func (e *pubSubEvent) Update(elapse time.Duration) error {
-	e.Delay -= elapse
-	if e.Delay > 0 {
-		return nil
-	}
-	e.VM.Push(e.Func)
-	for _, argument := range e.Arguments {
-		e.VM.Push(argument)
-	}
-	if err := e.VM.PCall(len(e.Arguments), 1, nil); err != nil {
-		return err
-	}
-	defer e.VM.Pop(1)
-	if ret, ok := e.VM.Get(-1).(lua.LBool); ok && ret == true {
-		e.Delay = e.Period
-	} else {
-		e.Store(false)
-	}
-	return nil
-}
-
 type redisSubscriber struct {
 	sync.Mutex
 	*redis.PubSub
@@ -63,15 +38,12 @@ func (s *redisSubscriber) Startup() {
 			s.Lock()
 			for _, fn := range s.functions {
 				e := &pubSubEvent{
-					TimerEvent: event.TimerEvent{
-						Arguments: []lua.LValue{
-							decode(s.vm, msg.Payload),
-						},
-						Func: fn,
-						VM:   s.vm,
+					Arguments: []lua.LValue{
+						decode(s.vm, msg.Payload),
 					},
+					Func: fn,
+					VM:   s.vm,
 				}
-				e.Store(true)
 				s.runtime.EventQueue() <- e
 			}
 			s.Unlock()
@@ -96,14 +68,6 @@ type redisModule struct {
 	pubsub map[string]*redisSubscriber
 }
 
-type RedisConfig interface {
-	GetAddress() string
-
-	GetPassword() string
-
-	GetDB() int
-}
-
 func connect_redis(opt *redis.Options) *sync.Pool {
 	if opt != nil {
 		if pool, ok := rdbs.Load(opt.Addr); ok {
@@ -122,7 +86,7 @@ func connect_redis(opt *redis.Options) *sync.Pool {
 	return nil
 }
 
-func RedisModule(runtime Runtime, config RedisConfig) *redisModule {
+func RedisModule(runtime Runtime, opts *redis.Options) *redisModule {
 	return &redisModule{
 		RuntimeModule: RuntimeModule{
 			Module: Module{
@@ -131,11 +95,7 @@ func RedisModule(runtime Runtime, config RedisConfig) *redisModule {
 			runtime: runtime,
 		},
 		pubsub: make(map[string]*redisSubscriber),
-		pool: connect_redis(&redis.Options{
-			Addr:     config.GetAddress(),
-			Password: config.GetPassword(),
-			DB:       config.GetDB(),
-		}),
+		pool:   connect_redis(opts),
 	}
 }
 
@@ -810,4 +770,26 @@ func (m *redisModule) punsubscribe(l *lua.LState) int {
 	}
 
 	return 0
+}
+
+type pubSubEvent struct {
+	event.StateEvent
+	Func      *lua.LFunction
+	Arguments []lua.LValue
+	VM        *lua.LState
+}
+
+func (e *pubSubEvent) Update(elapse time.Duration) error {
+	switch event.State(e.Load()) {
+	case event.INITIALIZE:
+		e.VM.Push(e.Func)
+		defer e.Store(uint32(event.COMPLETE))
+		for _, argument := range e.Arguments {
+			e.VM.Push(argument)
+		}
+		if err := e.VM.PCall(len(e.Arguments), 0, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }

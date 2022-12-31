@@ -6,41 +6,10 @@ import (
 	"time"
 
 	"github.com/deflinhec/runtimelua"
+	"github.com/go-redis/redis/v8"
 
 	"github.com/alicebob/miniredis"
 )
-
-type LocalRedis struct {
-}
-
-func (r *LocalRedis) GetAddress() string {
-	return "localhost:6379"
-}
-
-func (r *LocalRedis) GetPassword() string {
-	return ""
-}
-
-func (r *LocalRedis) GetDB() int {
-	return 0
-}
-
-type MiniRedis struct {
-	LocalRedis
-	*miniredis.Miniredis
-}
-
-func (r *MiniRedis) GetAddress() string {
-	return r.Addr()
-}
-
-func (r *MiniRedis) GetPassword() string {
-	return ""
-}
-
-func (r *MiniRedis) GetDB() int {
-	return 0
-}
 
 func TestRedisModuleGetSet(t *testing.T) {
 	s, err := miniredis.Run()
@@ -66,7 +35,9 @@ func TestRedisModuleGetSet(t *testing.T) {
 		test.done()
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleRedis(&MiniRedis{Miniredis: s}),
+		runtimelua.WithModuleRedis(&redis.Options{
+			Addr: s.Addr(),
+		}),
 		runtimelua.WithModule(test),
 	).Wait()
 }
@@ -90,7 +61,9 @@ func TestRedisModulePubSub(t *testing.T) {
 		end)
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleRedis(&LocalRedis{}),
+		runtimelua.WithModuleRedis(&redis.Options{
+			Addr: "localhost:6379",
+		}),
 		runtimelua.WithModule(test),
 	)
 	newRuntimeWithModules(t, map[string]string{
@@ -105,7 +78,9 @@ func TestRedisModulePubSub(t *testing.T) {
 		`,
 	}, runtimelua.WithContext(ctx),
 		runtimelua.WithModuleEvent(),
-		runtimelua.WithModuleRedis(&LocalRedis{}),
+		runtimelua.WithModuleRedis(&redis.Options{
+			Addr: "localhost:6379",
+		}),
 		runtimelua.WithModule(test),
 	).Wait()
 }

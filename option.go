@@ -5,6 +5,7 @@ import (
 
 	"github.com/deflinhec/runtimelua/auxlib"
 	"github.com/deflinhec/runtimelua/module"
+	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
 )
 
@@ -38,9 +39,9 @@ func WithContext(ctx context.Context) Option {
 	})
 }
 
-func WithModuleRedis(config module.RedisConfig) Option {
+func WithModuleRedis(opts *redis.Options) Option {
 	return newOption(func(r *Runtime) {
-		mod := module.RedisModule(r, config)
+		mod := module.RedisModule(r, opts)
 		r.preloads[mod.Name()] = mod
 	})
 }
