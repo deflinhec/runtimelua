@@ -15,6 +15,7 @@ const (
 )
 
 type StateEvent struct {
+	EventType
 	value uint32
 }
 

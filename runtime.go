@@ -2,6 +2,7 @@ package runtimelua
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -154,8 +155,8 @@ func (r *Runtime) Startup() {
 func (r *Runtime) process() {
 	var e event.Event
 	eventUpdateTime := time.Now()
-	eventQueue := make([]event.Event, 0)
-	eventSwapQueue := make([]event.Event, 0)
+	eventQueue := make(event.EventQueue, 0)
+	eventSwapQueue := make(event.EventQueue, 0)
 
 IncommingLoop:
 	for {
@@ -163,6 +164,7 @@ IncommingLoop:
 		case <-r.ctx.Done():
 			break IncommingLoop
 		case <-time.After(time.Millisecond * 66):
+			sort.Sort(eventQueue)
 			r.Lock()
 			r.vm.Pop(r.vm.GetTop())
 			elpase := time.Since(eventUpdateTime)

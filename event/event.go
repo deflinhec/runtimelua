@@ -1,7 +1,6 @@
 package event
 
 import (
-	"sync/atomic"
 	"time"
 )
 
@@ -11,45 +10,38 @@ type Event interface {
 	Update(time.Duration) error
 
 	Continue() bool
+
+	Priority() int
 }
 
-type TimerEvent struct {
-	value         uint32
-	Delay, Period time.Duration
+type EventType struct{}
+
+func (p *EventType) Valid() bool {
+	return true
 }
 
-func (e *TimerEvent) Load() bool {
-	return atomic.LoadUint32(&e.value) == 1
+func (p *EventType) Priority() int {
+	return 1
 }
 
-func (e *TimerEvent) Store(value bool) {
-	if value {
-		atomic.StoreUint32(&e.value, uint32(1))
-	} else {
-		atomic.StoreUint32(&e.value, uint32(0))
-	}
-}
-
-func (e *TimerEvent) Valid() bool {
-	return e.Load()
-}
-
-func (e *TimerEvent) Continue() bool {
-	if !e.Load() {
-		return false
-	}
-	return e.Delay > 0
-}
-
-func (e *TimerEvent) Update(elapse time.Duration) error {
-	e.Delay -= elapse
-	if e.Delay > 0 {
-		return nil
-	}
-	e.Delay = e.Period
+func (p *EventType) Update(time.Duration) error {
 	return nil
 }
 
-func (e *TimerEvent) Stop() {
-	e.Store(false)
+func (p *EventType) Continue() bool {
+	return false
+}
+
+type EventQueue []Event
+
+func (s EventQueue) Len() int {
+	return len(s)
+}
+
+func (s EventQueue) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s EventQueue) Less(i, j int) bool {
+	return s[i].Priority() < s[j].Priority()
 }
