@@ -14,12 +14,20 @@ type Event interface {
 }
 
 type TimerEvent struct {
-	atomic.Value
+	value         uint32
 	Delay, Period time.Duration
 }
 
 func (e *TimerEvent) Load() bool {
-	return e.Value.Load().(bool)
+	return atomic.LoadUint32(&e.value) == 1
+}
+
+func (e *TimerEvent) Store(value bool) {
+	if value {
+		atomic.StoreUint32(&e.value, uint32(1))
+	} else {
+		atomic.StoreUint32(&e.value, uint32(0))
+	}
 }
 
 func (e *TimerEvent) Valid() bool {
