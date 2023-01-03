@@ -15,7 +15,11 @@ const (
 )
 
 type StateEvent struct {
-	atomic.Uint32
+	atomic.Value
+}
+
+func (e *StateEvent) Load() uint32 {
+	return e.Value.Load().(uint32)
 }
 
 func (e *StateEvent) Valid() bool {
