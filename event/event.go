@@ -14,8 +14,12 @@ type Event interface {
 }
 
 type TimerEvent struct {
-	atomic.Bool
+	atomic.Value
 	Delay, Period time.Duration
+}
+
+func (e *TimerEvent) Load() bool {
+	return e.Value.Load().(bool)
 }
 
 func (e *TimerEvent) Valid() bool {
