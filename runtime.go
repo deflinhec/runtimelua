@@ -130,9 +130,7 @@ func (r *Runtime) Startup() {
 		r.vm.Call(1, 0)
 		r.logger.Debug("load", zap.String("lib", name))
 	}
-	for name, lib := range map[string]lua.LGFunction{
-		auxlib.JsonLibName: auxlib.OpenJson,
-	} {
+	for name, lib := range r.auxlibs {
 		r.vm.PreloadModule(name, lib)
 		r.logger.Debug("preload", zap.String("lib", name))
 	}
