@@ -8,6 +8,7 @@ import (
 
 	"github.com/deflinhec/runtimelua/auxlib"
 	"github.com/deflinhec/runtimelua/event"
+	"github.com/deflinhec/runtimelua/luaconv"
 	"github.com/deflinhec/runtimelua/module"
 
 	lua "github.com/yuin/gopher-lua"
@@ -41,6 +42,7 @@ type Runtime struct {
 	wg     *sync.WaitGroup
 
 	script      string
+	evaluate    func(interface{})
 	preloads    map[string]Module
 	auxlibs     map[string]lua.LGFunction
 	ctx         context.Context
@@ -76,19 +78,20 @@ func NewRuntime(options ...Option) *Runtime {
 	return r
 }
 
-func NewRuntimeWithConfig(config Config, options ...Option) *Runtime {
+func NewRuntimeWithConfig(opts lua.Options, options ...Option) *Runtime {
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 	ctx, ctxCancelFn := context.WithCancel(context.Background())
 	r := &Runtime{
 		logger:      logger,
-		vm:          lua.NewState(config.GetLuaOptions()),
-		script:      config.GetScriptEntry(),
+		vm:          lua.NewState(opts),
+		script:      "main",
 		ctx:         ctx,
 		ctxCancelFn: ctxCancelFn,
 		wg:          &sync.WaitGroup{},
 		preloads:    make(map[string]Module),
-		eventQueue:  make(chan event.Event, config.GetEventQueueSize()),
+		auxlibs:     make(map[string]lua.LGFunction),
+		eventQueue:  make(chan event.Event, 128),
 	}
 	for _, option := range options {
 		option.apply(r)
@@ -145,8 +148,16 @@ func (r *Runtime) Startup() {
 	init := lua.LString(r.script)
 	req := r.vm.GetGlobal("require").(*lua.LFunction)
 	if err := r.vm.GPCall(req.GFunction, init); err != nil {
-		r.logger.Error("script", zap.Error(err))
-		r.ctxCancelFn()
+		defer r.ctxCancelFn()
+		if r.evaluate == nil {
+			r.logger.Error("script", zap.Error(err))
+		} else {
+			r.evaluate(err)
+		}
+	} else if r.evaluate != nil {
+		if ret := r.vm.Get(-1); ret != lua.LNil {
+			r.evaluate(luaconv.LuaValue(ret))
+		}
 	}
 }
 
@@ -172,7 +183,11 @@ IncommingLoop:
 				if !e.Valid() {
 					continue
 				} else if err := e.Update(elpase); err != nil {
-					r.logger.Error("runtime event", zap.Error(err))
+					if r.evaluate == nil {
+						r.logger.Error("runtime event", zap.Error(err))
+					} else {
+						r.evaluate(err)
+					}
 				} else if e.Continue() {
 					eventSwapQueue = append(eventSwapQueue, e)
 				}

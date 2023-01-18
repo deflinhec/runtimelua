@@ -2,10 +2,15 @@ package runtimelua
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/deflinhec/runtimelua/auxlib"
+	"github.com/deflinhec/runtimelua/luaconv"
 	"github.com/deflinhec/runtimelua/module"
 	"github.com/go-redis/redis/v8"
+	lua "github.com/yuin/gopher-lua"
 	"go.uber.org/zap"
 )
 
@@ -141,5 +146,26 @@ func WithLibBit64() Option {
 		name := auxlib.Bit64LibName
 		lib := auxlib.OpenBit64
 		r.auxlibs[name] = lib
+	})
+}
+
+func WithScript(script string) Option {
+	return newOption(func(r *Runtime) {
+		relPath, _ := filepath.Rel(lua.LuaLDir, script)
+		name := strings.TrimSuffix(relPath, filepath.Ext(relPath))
+		// Make paths Lua friendly.
+		r.script = strings.Replace(name, string(os.PathSeparator), ".", -1)
+	})
+}
+
+func WithGlobal(key string, value interface{}) Option {
+	return newOption(func(r *Runtime) {
+		r.vm.SetGlobal(key, luaconv.Value(r.vm, value))
+	})
+}
+
+func WithEvaluation(evaluation func(interface{})) Option {
+	return newOption(func(r *Runtime) {
+		r.evaluate = evaluation
 	})
 }
