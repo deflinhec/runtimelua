@@ -12,6 +12,8 @@ import (
 
 type localLoggerModule struct {
 	localModule
+
+	logger *zap.Logger
 }
 
 func (m *localLoggerModule) Open() lua.LGFunction {

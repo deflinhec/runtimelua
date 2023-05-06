@@ -19,9 +19,10 @@ import (
 
 var rdbs sync.Map
 
-type redisSubscriber struct {
+type localRedisSubscriber struct {
 	sync.Mutex
 	*redis.PubSub
+
 	runtime     *Runtime
 	vm          *lua.LState
 	functions   []*lua.LFunction
@@ -29,7 +30,7 @@ type redisSubscriber struct {
 	ctxCancelFn context.CancelFunc
 }
 
-func (s *redisSubscriber) Startup() {
+func (s *localRedisSubscriber) Startup() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -43,28 +44,30 @@ func (s *redisSubscriber) Startup() {
 					},
 					Func: fn,
 				}
-				s.runtime.eventQueue <- e
+				s.runtime.EventQueue <- e
 			}
 			s.Unlock()
 		}
 	}
 }
 
-func (s *redisSubscriber) Append(fn *lua.LFunction) {
+func (s *localRedisSubscriber) Append(fn *lua.LFunction) {
 	s.Lock()
 	defer s.Unlock()
 	s.functions = append(s.functions, fn)
 }
 
-func (s *redisSubscriber) Close() error {
+func (s *localRedisSubscriber) Close() error {
 	s.ctxCancelFn()
 	return s.PubSub.Close()
 }
 
 type localRedisModule struct {
 	localRuntimeModule
+
+	logger *zap.Logger
 	pool   *sync.Pool
-	pubsub map[string]*redisSubscriber
+	pubsub map[string]*localRedisSubscriber
 }
 
 func connect_redis(opt *redis.Options) *sync.Pool {
@@ -604,7 +607,7 @@ func (m *localRedisModule) subscribe(l *lua.LState) int {
 			return 0
 		}
 		ctx, ctxCancelFn := context.WithCancel(l.Context())
-		subscriber := &redisSubscriber{
+		subscriber := &localRedisSubscriber{
 			vm:          l,
 			PubSub:      sub,
 			ctx:         ctx,
@@ -626,7 +629,7 @@ func (m *localRedisModule) unsubscribe(l *lua.LState) int {
 		return 0
 	}
 	var ok = false
-	var sub *redisSubscriber
+	var sub *localRedisSubscriber
 	if sub, ok = m.pubsub[channel]; !ok {
 		return 0
 	}
@@ -698,7 +701,7 @@ func (m *localRedisModule) psubscribe(l *lua.LState) int {
 			return 0
 		}
 		ctx, ctxCancelFn := context.WithCancel(l.Context())
-		subscriber := &redisSubscriber{
+		subscriber := &localRedisSubscriber{
 			vm:          l,
 			PubSub:      sub,
 			ctx:         ctx,
@@ -722,7 +725,7 @@ func (m *localRedisModule) punsubscribe(l *lua.LState) int {
 	}
 
 	var ok = false
-	var sub *redisSubscriber
+	var sub *localRedisSubscriber
 	if sub, ok = m.pubsub[pattern]; !ok {
 		return 0
 	}

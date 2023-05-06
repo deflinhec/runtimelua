@@ -319,16 +319,18 @@ func (sm *localScriptModule) OpenPackage() lua.LGFunction {
 								if completes == 0 {
 									e = &localHotfixEvent{
 										module:   m,
+										logger:   sm.logger,
 										resultCh: result,
 									}
 								} else {
 									e = &localPatchEvent{
 										module:   m,
+										logger:   sm.logger,
 										resultCh: result,
 									}
 								}
 								// Send and wait for the result.
-								r.eventQueue <- e
+								r.EventQueue <- e
 								if err := <-result; err != nil {
 									sm.logger.Warn("An error occurred while patching lua module",
 										zap.String("module", name), zap.Error(err))

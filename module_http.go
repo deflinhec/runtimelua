@@ -10,6 +10,7 @@ import (
 
 	"github.com/deflinhec/runtimelua/event"
 	"github.com/deflinhec/runtimelua/luaconv"
+	"go.uber.org/zap"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -17,6 +18,8 @@ import (
 type localHTTPModule struct {
 	localRuntimeModule
 	http.Client
+
+	logger *zap.Logger
 }
 
 func (m *localHTTPModule) Open() lua.LGFunction {
@@ -180,7 +183,7 @@ func (m *localHTTPModule) request_async(l *lua.LState) int {
 		Request:     req,
 		Func:        fn,
 	}
-	m.runtime.eventQueue <- e
+	m.runtime.EventQueue <- e
 	return 0
 }
 

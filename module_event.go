@@ -4,12 +4,15 @@ import (
 	"time"
 
 	"github.com/deflinhec/runtimelua/event"
+	"go.uber.org/zap"
 
 	lua "github.com/yuin/gopher-lua"
 )
 
 type localEventModule struct {
 	localRuntimeModule
+
+	logger *zap.Logger
 }
 
 func (m *localEventModule) Open() lua.LGFunction {
@@ -42,7 +45,7 @@ func (m *localEventModule) delay(l *lua.LState) int {
 	timer.Metatable = &lua.LUserData{Value: e}
 
 	e.Store(true)
-	m.runtime.eventQueue <- e
+	m.runtime.EventQueue <- e
 	l.Push(timer)
 	return 1
 }
@@ -66,7 +69,7 @@ func (m *localEventModule) loop(l *lua.LState) int {
 	timer.Metatable = &lua.LUserData{Value: e}
 
 	e.Store(true)
-	m.runtime.eventQueue <- e
+	m.runtime.EventQueue <- e
 	l.Push(timer)
 	return 1
 }

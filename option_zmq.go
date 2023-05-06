@@ -11,11 +11,11 @@ func WithModuleZmq(logger *zap.Logger) Option {
 		mod := &localZmqModule{
 			localRuntimeModule: localRuntimeModule{
 				localModule: localModule{
-					name:   "zmq",
-					logger: logger,
+					name: "zmq",
 				},
 				runtime: r,
 			},
+			logger: logger,
 		}
 		r.preloads[mod.Name()] = mod
 	})

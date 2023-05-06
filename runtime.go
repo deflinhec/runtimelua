@@ -14,7 +14,7 @@ import (
 )
 
 type Runtime struct {
-	sync.Mutex
+	sync.RWMutex
 	logger *zap.Logger
 	vm     *lua.LState
 	wg     *sync.WaitGroup
@@ -26,10 +26,10 @@ type Runtime struct {
 	ctx         context.Context
 	ctxCancelFn context.CancelFunc
 	scripts     ScriptModule
-	eventQueue  chan Event
+	EventQueue  chan Event
 }
 
-func NewRuntime(scripts ScriptModule, options ...Option) *Runtime {
+func NewRuntime(scripts *localScriptModule, options ...Option) *Runtime {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 	ctx, ctxCancelFn := context.WithCancel(context.Background())
@@ -49,11 +49,12 @@ func NewRuntime(scripts ScriptModule, options ...Option) *Runtime {
 		wg:          &sync.WaitGroup{},
 		preloads:    make(map[string]Module),
 		auxlibs:     make(map[string]lua.LGFunction),
-		eventQueue:  make(chan Event, 128),
+		EventQueue:  make(chan Event, 128),
 	}
 	for _, option := range options {
 		option.apply(r)
 	}
+	scripts.runtimes <- r
 	return r
 }
 
@@ -70,7 +71,7 @@ func NewRuntimeWithConfig(scripts ScriptModule, opts lua.Options, options ...Opt
 		wg:          &sync.WaitGroup{},
 		preloads:    make(map[string]Module),
 		auxlibs:     make(map[string]lua.LGFunction),
-		eventQueue:  make(chan Event, 128),
+		EventQueue:  make(chan Event, 128),
 	}
 	for _, option := range options {
 		option.apply(r)
@@ -104,7 +105,6 @@ func (r *Runtime) Startup() {
 	}
 	for name, module := range r.preloads {
 		r.vm.PreloadModule(name, module.Open())
-		module.Initialize(r.logger)
 		r.logger.Debug("preload", zap.String("module", name))
 	}
 	r.wg.Add(1)
@@ -163,7 +163,7 @@ IncommingLoop:
 			r.logger.Debug("event queue tick",
 				zap.Int("total", len(eventQueue)),
 			)
-		case e = <-r.eventQueue:
+		case e = <-r.EventQueue:
 			eventQueue = append(eventQueue, e)
 			r.logger.Debug("event queue received",
 				zap.Int("total", len(eventQueue)),

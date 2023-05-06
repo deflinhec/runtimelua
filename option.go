@@ -48,12 +48,12 @@ func WithModuleRedis(logger *zap.Logger, opts *redis.Options) Option {
 		mod := &localRedisModule{
 			localRuntimeModule: localRuntimeModule{
 				localModule: localModule{
-					name:   "redis",
-					logger: logger,
+					name: "redis",
 				},
 				runtime: r,
 			},
-			pubsub: make(map[string]*redisSubscriber),
+			logger: logger,
+			pubsub: make(map[string]*localRedisSubscriber),
 			pool:   connect_redis(opts),
 		}
 		r.preloads[mod.Name()] = mod
@@ -65,11 +65,11 @@ func WithModuleEvent(logger *zap.Logger) Option {
 		mod := &localEventModule{
 			localRuntimeModule: localRuntimeModule{
 				localModule: localModule{
-					name:   "event",
-					logger: logger,
+					name: "event",
 				},
 				runtime: r,
 			},
+			logger: logger,
 		}
 		r.preloads[mod.Name()] = mod
 	})
@@ -79,9 +79,9 @@ func WithModuleLogger(logger *zap.Logger) Option {
 	return newOption(func(r *Runtime) {
 		mod := &localLoggerModule{
 			localModule: localModule{
-				name:   "logger",
-				logger: logger,
+				name: "logger",
 			},
+			logger: logger,
 		}
 		r.preloads[mod.Name()] = mod
 	})
@@ -92,20 +92,13 @@ func WithModuleHttp(logger *zap.Logger) Option {
 		mod := &localHTTPModule{
 			localRuntimeModule: localRuntimeModule{
 				localModule: localModule{
-					name:   "http",
-					logger: logger,
+					name: "http",
 				},
 				runtime: r,
 			},
+			logger: logger,
 		}
 		r.preloads[mod.Name()] = mod
-	})
-}
-
-func WithScriptModule(mod *localScriptModule) Option {
-	return newOption(func(r *Runtime) {
-		mod.runtimes <- r
-		r.scripts = mod
 	})
 }
 

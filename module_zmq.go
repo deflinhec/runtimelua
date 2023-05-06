@@ -15,6 +15,7 @@ import (
 
 	"github.com/deflinhec/runtimelua/event"
 	"github.com/deflinhec/runtimelua/luaconv"
+	"go.uber.org/zap"
 
 	lua "github.com/yuin/gopher-lua"
 	"gopkg.in/zeromq/goczmq.v4"
@@ -23,6 +24,8 @@ import (
 // ZMQ Require extra library dependency.
 type localZmqModule struct {
 	localRuntimeModule
+
+	logger *zap.Logger
 }
 
 func (m *localZmqModule) Open() lua.LGFunction {
@@ -61,7 +64,7 @@ func (m *localZmqModule) dealer(l *lua.LState) int {
 	}
 	stub.Metatable = &lua.LUserData{Value: e}
 
-	m.runtime.eventQueue <- e
+	m.runtime.EventQueue <- e
 	l.Push(stub)
 	return 1
 }
@@ -94,7 +97,7 @@ func (m *localZmqModule) router(l *lua.LState) int {
 	}
 	stub.Metatable = &lua.LUserData{Value: e}
 
-	m.runtime.eventQueue <- e
+	m.runtime.EventQueue <- e
 	l.Push(stub)
 	return 1
 }
