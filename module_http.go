@@ -1,4 +1,4 @@
-package module
+package runtimelua
 
 import (
 	"context"
@@ -14,23 +14,12 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-type httpModule struct {
-	RuntimeModule
+type localHTTPModule struct {
+	localRuntimeModule
 	http.Client
 }
 
-func HttpModule(runtime Runtime) *httpModule {
-	return &httpModule{
-		RuntimeModule: RuntimeModule{
-			Module: Module{
-				name: "http",
-			},
-			runtime: runtime,
-		},
-	}
-}
-
-func (m *httpModule) Open() lua.LGFunction {
+func (m *localHTTPModule) Open() lua.LGFunction {
 	return func(l *lua.LState) int {
 		functions := map[string]lua.LGFunction{
 			"request":       m.request,
@@ -41,7 +30,7 @@ func (m *httpModule) Open() lua.LGFunction {
 	}
 }
 
-func (m *httpModule) request(l *lua.LState) int {
+func (m *localHTTPModule) request(l *lua.LState) int {
 	url := l.CheckString(1)
 	method := strings.ToUpper(l.CheckString(2))
 	headers := l.CheckTable(3)
@@ -124,7 +113,7 @@ func (m *httpModule) request(l *lua.LState) int {
 	return 3
 }
 
-func (m *httpModule) request_async(l *lua.LState) int {
+func (m *localHTTPModule) request_async(l *lua.LState) int {
 	fn := l.CheckFunction(1)
 	url := l.CheckString(2)
 	method := strings.ToUpper(l.CheckString(3))
@@ -185,28 +174,27 @@ func (m *httpModule) request_async(l *lua.LState) int {
 		}
 		req.Header.Add(k, vs)
 	}
-	m.runtime.EventQueue() <- &httpRequestEvent{
+	e := &localHTTPRequestEvent{
 		ctxCancelFn: ctxCancelFn,
 		Client:      m.Client,
 		Request:     req,
-		VM:          l,
 		Func:        fn,
 	}
+	m.runtime.eventQueue <- e
 	return 0
 }
 
-type httpRequestEvent struct {
-	event.StateEvent
+type localHTTPRequestEvent struct {
+	StateEvent
 	*http.Request
 	http.Client
 	ctxCancelFn context.CancelFunc
-	VM          *lua.LState
 	Func        *lua.LFunction
 	resp        *http.Response
 	err         error
 }
 
-func (e *httpRequestEvent) Update(time.Duration) error {
+func (e *localHTTPRequestEvent) Update(d time.Duration, l *lua.LState) error {
 	switch event.State(e.Load()) {
 	case event.INITIALIZE:
 		e.Store(uint32(event.PROGRESS))
@@ -245,21 +233,21 @@ func (e *httpRequestEvent) Update(time.Duration) error {
 				}
 			}
 		}
-		e.VM.Push(e.Func)
+		l.Push(e.Func)
 		if e.err != nil {
-			e.VM.Push(lua.LBool(false))
-			e.VM.Push(lua.LString(e.err.Error()))
-			e.VM.Push(lua.LNil)
-			e.VM.Push(lua.LNil)
-			e.VM.Push(lua.LNil)
+			l.Push(lua.LBool(false))
+			l.Push(lua.LString(e.err.Error()))
+			l.Push(lua.LNil)
+			l.Push(lua.LNil)
+			l.Push(lua.LNil)
 		} else {
-			e.VM.Push(lua.LBool(true))
-			e.VM.Push(lua.LNil)
-			e.VM.Push(lua.LNumber(resp.StatusCode))
-			e.VM.Push(luaconv.Map(e.VM, headers))
-			e.VM.Push(lua.LString(string(body)))
+			l.Push(lua.LBool(true))
+			l.Push(lua.LNil)
+			l.Push(lua.LNumber(resp.StatusCode))
+			l.Push(luaconv.Map(l, headers))
+			l.Push(lua.LString(string(body)))
 		}
-		return e.VM.PCall(5, 0, nil)
+		return l.PCall(5, 0, nil)
 	}
 	return nil
 }

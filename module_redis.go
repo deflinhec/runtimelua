@@ -1,4 +1,4 @@
-package module
+package runtimelua
 
 import (
 	"context"
@@ -22,7 +22,7 @@ var rdbs sync.Map
 type redisSubscriber struct {
 	sync.Mutex
 	*redis.PubSub
-	runtime     Runtime
+	runtime     *Runtime
 	vm          *lua.LState
 	functions   []*lua.LFunction
 	ctx         context.Context
@@ -42,9 +42,8 @@ func (s *redisSubscriber) Startup() {
 						decode(s.vm, msg.Payload),
 					},
 					Func: fn,
-					VM:   s.vm,
 				}
-				s.runtime.EventQueue() <- e
+				s.runtime.eventQueue <- e
 			}
 			s.Unlock()
 		}
@@ -62,8 +61,8 @@ func (s *redisSubscriber) Close() error {
 	return s.PubSub.Close()
 }
 
-type redisModule struct {
-	RuntimeModule
+type localRedisModule struct {
+	localRuntimeModule
 	pool   *sync.Pool
 	pubsub map[string]*redisSubscriber
 }
@@ -86,20 +85,7 @@ func connect_redis(opt *redis.Options) *sync.Pool {
 	return nil
 }
 
-func RedisModule(runtime Runtime, opts *redis.Options) *redisModule {
-	return &redisModule{
-		RuntimeModule: RuntimeModule{
-			Module: Module{
-				name: "redis",
-			},
-			runtime: runtime,
-		},
-		pubsub: make(map[string]*redisSubscriber),
-		pool:   connect_redis(opts),
-	}
-}
-
-func (m *redisModule) Open() lua.LGFunction {
+func (m *localRedisModule) Open() lua.LGFunction {
 	return func(l *lua.LState) int {
 		functions := map[string]lua.LGFunction{
 			"exists":       m.exists,
@@ -125,7 +111,7 @@ func (m *redisModule) Open() lua.LGFunction {
 	}
 }
 
-func (m *redisModule) validate() error {
+func (m *localRedisModule) validate() error {
 	if m.pool == nil {
 		return errors.New("no connection")
 	}
@@ -154,7 +140,7 @@ func decode(l *lua.LState, v interface{}) lua.LValue {
 	return v.(lua.LValue)
 }
 
-func (m *redisModule) ping(l *lua.LState) int {
+func (m *localRedisModule) ping(l *lua.LState) int {
 	if err := m.validate(); err != nil {
 		return 0
 	}
@@ -168,7 +154,7 @@ func (m *redisModule) ping(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) exists(l *lua.LState) int {
+func (m *localRedisModule) exists(l *lua.LState) int {
 	key := l.CheckString(1)
 
 	if len(key) == 0 {
@@ -201,7 +187,7 @@ func (m *redisModule) exists(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) get(l *lua.LState) int {
+func (m *localRedisModule) get(l *lua.LState) int {
 	key := l.CheckString(1)
 
 	if len(key) == 0 {
@@ -234,7 +220,7 @@ func (m *redisModule) get(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) set(l *lua.LState) int {
+func (m *localRedisModule) set(l *lua.LState) int {
 	key := l.CheckString(1)
 	value := luaconv.LuaValue(l.CheckAny(2))
 
@@ -269,7 +255,7 @@ func (m *redisModule) set(l *lua.LState) int {
 	return 0
 }
 
-func (m *redisModule) incr(l *lua.LState) int {
+func (m *localRedisModule) incr(l *lua.LState) int {
 	key := l.CheckString(1)
 
 	if len(key) == 0 {
@@ -293,7 +279,7 @@ func (m *redisModule) incr(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) incrby(l *lua.LState) int {
+func (m *localRedisModule) incrby(l *lua.LState) int {
 	key := l.CheckString(1)
 
 	if len(key) == 0 {
@@ -320,7 +306,7 @@ func (m *redisModule) incrby(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) hincrby(l *lua.LState) int {
+func (m *localRedisModule) hincrby(l *lua.LState) int {
 	key := l.CheckString(1)
 
 	if len(key) == 0 {
@@ -354,7 +340,7 @@ func (m *redisModule) hincrby(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) hgetall(l *lua.LState) int {
+func (m *localRedisModule) hgetall(l *lua.LState) int {
 	key := l.CheckString(1)
 
 	if len(key) == 0 {
@@ -392,7 +378,7 @@ func (m *redisModule) hgetall(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) hkeys(l *lua.LState) int {
+func (m *localRedisModule) hkeys(l *lua.LState) int {
 	key := l.CheckString(1)
 
 	if len(key) == 0 {
@@ -430,7 +416,7 @@ func (m *redisModule) hkeys(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) hget(l *lua.LState) int {
+func (m *localRedisModule) hget(l *lua.LState) int {
 	key := l.CheckString(1)
 	field := l.CheckString(2)
 
@@ -469,7 +455,7 @@ func (m *redisModule) hget(l *lua.LState) int {
 	return 1
 }
 
-func (m *redisModule) hset(l *lua.LState) int {
+func (m *localRedisModule) hset(l *lua.LState) int {
 	key := l.CheckString(1)
 	field := l.CheckString(2)
 	value := luaconv.LuaValue(l.CheckAny(3))
@@ -511,7 +497,7 @@ func (m *redisModule) hset(l *lua.LState) int {
 	return 0
 }
 
-func (m *redisModule) hmset(l *lua.LState) int {
+func (m *localRedisModule) hmset(l *lua.LState) int {
 	key := l.CheckString(1)
 	table := l.CheckTable(2)
 
@@ -547,7 +533,7 @@ func (m *redisModule) hmset(l *lua.LState) int {
 	return 0
 }
 
-func (m *redisModule) publish(l *lua.LState) int {
+func (m *localRedisModule) publish(l *lua.LState) int {
 	channel := l.CheckString(1)
 
 	if len(channel) == 0 {
@@ -582,7 +568,7 @@ func (m *redisModule) publish(l *lua.LState) int {
 	return 0
 }
 
-func (m *redisModule) subscribe(l *lua.LState) int {
+func (m *localRedisModule) subscribe(l *lua.LState) int {
 	channel := l.CheckString(1)
 	fn := l.CheckFunction(2)
 
@@ -632,7 +618,7 @@ func (m *redisModule) subscribe(l *lua.LState) int {
 	return 0
 }
 
-func (m *redisModule) unsubscribe(l *lua.LState) int {
+func (m *localRedisModule) unsubscribe(l *lua.LState) int {
 	channel := l.CheckString(1)
 
 	if len(channel) == 0 {
@@ -676,7 +662,7 @@ func (m *redisModule) unsubscribe(l *lua.LState) int {
 	return 0
 }
 
-func (m *redisModule) psubscribe(l *lua.LState) int {
+func (m *localRedisModule) psubscribe(l *lua.LState) int {
 	pattern := l.CheckString(1)
 	fn := l.CheckFunction(2)
 
@@ -727,7 +713,7 @@ func (m *redisModule) psubscribe(l *lua.LState) int {
 	return 0
 }
 
-func (m *redisModule) punsubscribe(l *lua.LState) int {
+func (m *localRedisModule) punsubscribe(l *lua.LState) int {
 	pattern := l.CheckString(1)
 
 	if len(pattern) == 0 {
@@ -773,21 +759,20 @@ func (m *redisModule) punsubscribe(l *lua.LState) int {
 }
 
 type pubSubEvent struct {
-	event.StateEvent
+	StateEvent
 	Func      *lua.LFunction
 	Arguments []lua.LValue
-	VM        *lua.LState
 }
 
-func (e *pubSubEvent) Update(elapse time.Duration) error {
+func (e *pubSubEvent) Update(elapse time.Duration, l *lua.LState) error {
 	switch event.State(e.Load()) {
 	case event.INITIALIZE:
-		e.VM.Push(e.Func)
+		l.Push(e.Func)
 		defer e.Store(uint32(event.COMPLETE))
 		for _, argument := range e.Arguments {
-			e.VM.Push(argument)
+			l.Push(argument)
 		}
-		if err := e.VM.PCall(len(e.Arguments), 0, nil); err != nil {
+		if err := l.PCall(len(e.Arguments), 0, nil); err != nil {
 			return err
 		}
 	}

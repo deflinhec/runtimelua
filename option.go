@@ -8,7 +8,6 @@ import (
 
 	"github.com/deflinhec/runtimelua/auxlib"
 	"github.com/deflinhec/runtimelua/luaconv"
-	"github.com/deflinhec/runtimelua/module"
 	"github.com/go-redis/redis/v8"
 	lua "github.com/yuin/gopher-lua"
 	"go.uber.org/zap"
@@ -44,31 +43,69 @@ func WithContext(ctx context.Context) Option {
 	})
 }
 
-func WithModuleRedis(opts *redis.Options) Option {
+func WithModuleRedis(logger *zap.Logger, opts *redis.Options) Option {
 	return newOption(func(r *Runtime) {
-		mod := module.RedisModule(r, opts)
+		mod := &localRedisModule{
+			localRuntimeModule: localRuntimeModule{
+				localModule: localModule{
+					name:   "redis",
+					logger: logger,
+				},
+				runtime: r,
+			},
+			pubsub: make(map[string]*redisSubscriber),
+			pool:   connect_redis(opts),
+		}
 		r.preloads[mod.Name()] = mod
 	})
 }
 
-func WithModuleEvent() Option {
+func WithModuleEvent(logger *zap.Logger) Option {
 	return newOption(func(r *Runtime) {
-		mod := module.EventModule(r)
+		mod := &localEventModule{
+			localRuntimeModule: localRuntimeModule{
+				localModule: localModule{
+					name:   "event",
+					logger: logger,
+				},
+				runtime: r,
+			},
+		}
 		r.preloads[mod.Name()] = mod
 	})
 }
 
-func WithModuleLogger() Option {
+func WithModuleLogger(logger *zap.Logger) Option {
 	return newOption(func(r *Runtime) {
-		mod := module.LoggerModule(r)
+		mod := &localLoggerModule{
+			localModule: localModule{
+				name:   "logger",
+				logger: logger,
+			},
+		}
 		r.preloads[mod.Name()] = mod
 	})
 }
 
-func WithModuleHttp() Option {
+func WithModuleHttp(logger *zap.Logger) Option {
 	return newOption(func(r *Runtime) {
-		mod := module.HttpModule(r)
+		mod := &localHTTPModule{
+			localRuntimeModule: localRuntimeModule{
+				localModule: localModule{
+					name:   "http",
+					logger: logger,
+				},
+				runtime: r,
+			},
+		}
 		r.preloads[mod.Name()] = mod
+	})
+}
+
+func WithScriptModule(mod *localScriptModule) Option {
+	return newOption(func(r *Runtime) {
+		mod.runtimes <- r
+		r.scripts = mod
 	})
 }
 

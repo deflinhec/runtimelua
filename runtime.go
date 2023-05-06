@@ -7,33 +7,11 @@ import (
 	"time"
 
 	"github.com/deflinhec/runtimelua/auxlib"
-	"github.com/deflinhec/runtimelua/event"
 	"github.com/deflinhec/runtimelua/luaconv"
-	"github.com/deflinhec/runtimelua/module"
 
 	lua "github.com/yuin/gopher-lua"
 	"go.uber.org/zap"
 )
-
-type Module interface {
-	Name() string
-	Open() lua.LGFunction
-	Initialize(*zap.Logger)
-}
-
-type RuntimeModule interface {
-	Module
-	// Provide Initialization
-	InitializeRuntime(module.Runtime)
-}
-
-type ScriptModule interface {
-	Reload() error
-
-	Hotfix(name string) error
-
-	MD5Sum() map[string]string
-}
 
 type Runtime struct {
 	sync.Mutex
@@ -47,12 +25,12 @@ type Runtime struct {
 	auxlibs     map[string]lua.LGFunction
 	ctx         context.Context
 	ctxCancelFn context.CancelFunc
-	scripts     *module.ScriptModule
-	eventQueue  chan event.Event
+	scripts     ScriptModule
+	eventQueue  chan Event
 }
 
-func NewRuntime(options ...Option) *Runtime {
-	logger, _ := zap.NewDevelopment()
+func NewRuntime(scripts ScriptModule, options ...Option) *Runtime {
+	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 	ctx, ctxCancelFn := context.WithCancel(context.Background())
 	r := &Runtime{
@@ -65,12 +43,13 @@ func NewRuntime(options ...Option) *Runtime {
 			IncludeGoStackTrace: true,
 		}),
 		script:      "main",
+		scripts:     scripts,
 		ctx:         ctx,
 		ctxCancelFn: ctxCancelFn,
 		wg:          &sync.WaitGroup{},
 		preloads:    make(map[string]Module),
 		auxlibs:     make(map[string]lua.LGFunction),
-		eventQueue:  make(chan event.Event, 128),
+		eventQueue:  make(chan Event, 128),
 	}
 	for _, option := range options {
 		option.apply(r)
@@ -78,7 +57,7 @@ func NewRuntime(options ...Option) *Runtime {
 	return r
 }
 
-func NewRuntimeWithConfig(opts lua.Options, options ...Option) *Runtime {
+func NewRuntimeWithConfig(scripts ScriptModule, opts lua.Options, options ...Option) *Runtime {
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 	ctx, ctxCancelFn := context.WithCancel(context.Background())
@@ -91,7 +70,7 @@ func NewRuntimeWithConfig(opts lua.Options, options ...Option) *Runtime {
 		wg:          &sync.WaitGroup{},
 		preloads:    make(map[string]Module),
 		auxlibs:     make(map[string]lua.LGFunction),
-		eventQueue:  make(chan event.Event, 128),
+		eventQueue:  make(chan Event, 128),
 	}
 	for _, option := range options {
 		option.apply(r)
@@ -99,25 +78,11 @@ func NewRuntimeWithConfig(opts lua.Options, options ...Option) *Runtime {
 	return r
 }
 
-func (r *Runtime) Script() ScriptModule {
-	return r.scripts
-}
-
-func (r *Runtime) EventQueue() chan event.Event {
-	return r.eventQueue
-}
-
-func (r *Runtime) Logger() *zap.Logger {
-	return r.logger
-}
-
 func (r *Runtime) Wait() {
 	r.wg.Wait()
 }
 
 func (r *Runtime) Startup() {
-	r.scripts = module.NewScriptModule(r)
-	r.scripts.Initialize(r.logger)
 	for name, lib := range map[string]lua.LGFunction{
 		lua.BaseLibName:      lua.OpenBase,
 		lua.TabLibName:       lua.OpenTable,
@@ -162,10 +127,10 @@ func (r *Runtime) Startup() {
 }
 
 func (r *Runtime) process() {
-	var e event.Event
+	var e Event
 	eventUpdateTime := time.Now()
-	eventQueue := make(event.EventQueue, 0)
-	eventSwapQueue := make(event.EventQueue, 0)
+	eventQueue := make(EventQueue, 0)
+	eventSwapQueue := make(EventQueue, 0)
 
 IncommingLoop:
 	for {
@@ -182,7 +147,7 @@ IncommingLoop:
 				e, eventQueue = eventQueue[0], eventQueue[1:]
 				if !e.Valid() {
 					continue
-				} else if err := e.Update(elpase); err != nil {
+				} else if err := e.Update(elpase, r.vm); err != nil {
 					if r.evaluate == nil {
 						r.logger.Error("runtime event", zap.Error(err))
 					} else {

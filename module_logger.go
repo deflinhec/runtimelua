@@ -1,4 +1,4 @@
-package module
+package runtimelua
 
 import (
 	"log"
@@ -10,19 +10,11 @@ import (
 	"go.uber.org/zap"
 )
 
-type loggerModule struct {
-	Module
+type localLoggerModule struct {
+	localModule
 }
 
-func LoggerModule(runtime Runtime) *loggerModule {
-	return &loggerModule{
-		Module: Module{
-			name: "logger",
-		},
-	}
-}
-
-func (m *loggerModule) Open() lua.LGFunction {
+func (m *localLoggerModule) Open() lua.LGFunction {
 	return func(l *lua.LState) int {
 		functions := map[string]lua.LGFunction{
 			"log":   m.log,
@@ -36,7 +28,7 @@ func (m *loggerModule) Open() lua.LGFunction {
 	}
 }
 
-func (m *loggerModule) log(l *lua.LState) int {
+func (m *localLoggerModule) log(l *lua.LState) int {
 	message := l.CheckString(1)
 	if message == "" {
 		return 0
@@ -82,7 +74,7 @@ func collapse_to_log(table *lua.LTable) []zap.Field {
 	return fields
 }
 
-func (m *loggerModule) logInfo(l *lua.LState) int {
+func (m *localLoggerModule) logInfo(l *lua.LState) int {
 	msg := l.CheckString(1)
 	value := l.Get(2)
 	switch value := value.(type) {
@@ -96,7 +88,7 @@ func (m *loggerModule) logInfo(l *lua.LState) int {
 	return 0
 }
 
-func (m *loggerModule) logWarn(l *lua.LState) int {
+func (m *localLoggerModule) logWarn(l *lua.LState) int {
 	msg := l.CheckString(1)
 	value := l.Get(2)
 	switch value := value.(type) {
@@ -110,7 +102,7 @@ func (m *loggerModule) logWarn(l *lua.LState) int {
 	return 0
 }
 
-func (m *loggerModule) logError(l *lua.LState) int {
+func (m *localLoggerModule) logError(l *lua.LState) int {
 	msg := l.CheckString(1)
 	value := l.Get(2)
 	switch value := value.(type) {
@@ -124,7 +116,7 @@ func (m *loggerModule) logError(l *lua.LState) int {
 	return 0
 }
 
-func (m *loggerModule) logDebug(l *lua.LState) int {
+func (m *localLoggerModule) logDebug(l *lua.LState) int {
 	msg := l.CheckString(1)
 	value := l.Get(2)
 	switch value := value.(type) {

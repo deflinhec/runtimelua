@@ -1,4 +1,4 @@
-package module_test
+package runtimelua_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/deflinhec/runtimelua"
+	"go.uber.org/zap"
 )
 
 func TestEventModule(t *testing.T) {
@@ -13,6 +14,7 @@ func TestEventModule(t *testing.T) {
 		context.Background(), time.Second*10,
 	)
 	defer ctxCancelFn()
+	logger, _ := zap.NewDevelopment()
 	test := &TestingModule{cancel: ctxCancelFn}
 	newRuntimeWithModules(t, map[string]string{
 		"main": `
@@ -49,7 +51,7 @@ func TestEventModule(t *testing.T) {
 		end)
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleEvent(),
+		runtimelua.WithModuleEvent(logger),
 		runtimelua.WithModule(test),
 	).Wait()
 }

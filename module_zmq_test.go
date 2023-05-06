@@ -1,7 +1,7 @@
 //go:build zmq
 // +build zmq
 
-package module_test
+package runtimelua_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/deflinhec/runtimelua"
+	"go.uber.org/zap"
 )
 
 func TestZmqModule(t *testing.T) {
@@ -16,6 +17,7 @@ func TestZmqModule(t *testing.T) {
 		context.Background(), time.Second*10,
 	)
 	defer ctxCancelFn()
+	logger, _ := zap.NewDevelopment()
 	test := &TestingModule{cancel: ctxCancelFn}
 	defer test.validate(t)
 	newRuntimeWithModules(t, map[string]string{
@@ -33,7 +35,7 @@ func TestZmqModule(t *testing.T) {
 		)
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleZmq(),
+		runtimelua.WithModuleZmq(logger),
 		runtimelua.WithModule(test),
 	)
 	newRuntimeWithModules(t, map[string]string{
@@ -56,8 +58,8 @@ func TestZmqModule(t *testing.T) {
 		end)
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleEvent(),
-		runtimelua.WithModuleZmq(),
+		runtimelua.WithModuleEvent(logger),
+		runtimelua.WithModuleZmq(logger),
 		runtimelua.WithModule(test),
 	).Wait()
 }
