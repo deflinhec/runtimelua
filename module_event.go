@@ -3,7 +3,6 @@ package runtimelua
 import (
 	"time"
 
-	"github.com/deflinhec/runtimelua/event"
 	"go.uber.org/zap"
 
 	lua "github.com/yuin/gopher-lua"
@@ -37,7 +36,7 @@ func (m *localEventModule) delay(l *lua.LState) int {
 	timer := l.CreateTable(0, len(localTimerEventFuncs))
 	timer = l.SetFuncs(timer, localTimerEventFuncs)
 	e := &localTimerEvent{
-		TimerEvent: event.TimerEvent{
+		TimerEvent: TimerEvent{
 			Delay: time.Second * time.Duration(sec),
 		},
 		bind: timer, fn: fn,
@@ -61,7 +60,7 @@ func (m *localEventModule) loop(l *lua.LState) int {
 	timer := l.CreateTable(0, len(localTimerEventFuncs))
 	timer = l.SetFuncs(timer, localTimerEventFuncs)
 	e := &localTimerEvent{
-		TimerEvent: event.TimerEvent{
+		TimerEvent: TimerEvent{
 			Period: time.Second * time.Duration(sec),
 		},
 		bind: timer, fn: fn,
@@ -110,7 +109,7 @@ func local_timer_event_valid(l *lua.LState) int {
 }
 
 type localTimerEvent struct {
-	event.TimerEvent
+	TimerEvent
 	bind *lua.LTable
 	fn   *lua.LFunction
 }
