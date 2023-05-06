@@ -1,7 +1,7 @@
 //go:build zmq
 // +build zmq
 
-package module
+package runtimelua
 
 import (
 	"bytes"
@@ -15,28 +15,20 @@ import (
 
 	"github.com/deflinhec/runtimelua/event"
 	"github.com/deflinhec/runtimelua/luaconv"
+	"go.uber.org/zap"
 
 	lua "github.com/yuin/gopher-lua"
 	"gopkg.in/zeromq/goczmq.v4"
 )
 
 // ZMQ Require extra library dependency.
-type zmqModule struct {
-	RuntimeModule
+type localZmqModule struct {
+	localRuntimeModule
+
+	logger *zap.Logger
 }
 
-func ZMQModule(runtime Runtime) *zmqModule {
-	return &zmqModule{
-		RuntimeModule: RuntimeModule{
-			Module: Module{
-				name: "zmq",
-			},
-			runtime: runtime,
-		},
-	}
-}
-
-func (m *zmqModule) Open() lua.LGFunction {
+func (m *localZmqModule) Open() lua.LGFunction {
 	return func(l *lua.LState) int {
 		functions := map[string]lua.LGFunction{
 			"dealer": m.dealer,
@@ -48,7 +40,7 @@ func (m *zmqModule) Open() lua.LGFunction {
 }
 
 // Starts a dealer channeler
-func (m *zmqModule) dealer(l *lua.LState) int {
+func (m *localZmqModule) dealer(l *lua.LState) int {
 	address := l.CheckString(1)
 	u, err := url.Parse(fmt.Sprintf("tcp://%v", address))
 	if err != nil {
@@ -61,20 +53,24 @@ func (m *zmqModule) dealer(l *lua.LState) int {
 		l.ArgError(1, "expect function handler")
 		return 0
 	}
-	e := &zmqEvent{
+
+	stub := l.CreateTable(0, len(localZmqEventFuncs))
+	stub = l.SetFuncs(stub, localZmqEventFuncs)
+	e := &localZmqEvent{
 		Channeler: goczmq.NewDealerChanneler(
 			u.String(),
 		),
-		VM:   l,
-		Func: fn,
+		bind: stub, fn: fn,
 	}
-	m.runtime.EventQueue() <- e
-	l.Push(e.Self())
+	stub.Metatable = &lua.LUserData{Value: e}
+
+	m.runtime.EventQueue <- e
+	l.Push(stub)
 	return 1
 }
 
 // Starts a router channeler
-func (m *zmqModule) router(l *lua.LState) int {
+func (m *localZmqModule) router(l *lua.LState) int {
 	port := l.CheckNumber(1)
 	if port <= 1000 {
 		l.ArgError(1, "invalid port: port under 1000 are usually reserved by system")
@@ -89,15 +85,20 @@ func (m *zmqModule) router(l *lua.LState) int {
 		l.ArgError(1, "expect function handler")
 		return 0
 	}
-	e := &zmqEvent{
+
+	stub := l.CreateTable(0, len(localZmqEventFuncs))
+	stub = l.SetFuncs(stub, localZmqEventFuncs)
+	e := &localZmqEvent{
 		Channeler: goczmq.NewRouterChanneler(
 			fmt.Sprintf("tcp://*:%v", port),
 		),
-		VM:   l,
-		Func: fn,
+		bind: stub,
+		fn:   fn,
 	}
-	m.runtime.EventQueue() <- e
-	l.Push(e.Self())
+	stub.Metatable = &lua.LUserData{Value: e}
+
+	m.runtime.EventQueue <- e
+	l.Push(stub)
 	return 1
 }
 
@@ -138,19 +139,18 @@ func (p *zmqPacket) Deserialize(b [][]byte) error {
 	return nil
 }
 
-type zmqEvent struct {
+type localZmqEvent struct {
 	*goczmq.Channeler
 	event.StateEvent
 	sync.Mutex
 	queue []*zmqPacket
-	self  *lua.LTable
-	Func  *lua.LFunction
-	VM    *lua.LState
+	bind  *lua.LTable
+	fn    *lua.LFunction
 }
 
 // Initialize an goroutine which process received request,
 // and handle ZMQPacket within PROGRESS state.
-func (e *zmqEvent) Update(time.Duration) error {
+func (e *localZmqEvent) Update(d time.Duration, l *lua.LState) error {
 	switch event.State(e.Load()) {
 	case event.INITIALIZE:
 		e.Store(uint32(event.PROGRESS))
@@ -175,11 +175,11 @@ func (e *zmqEvent) Update(time.Duration) error {
 		defer e.Unlock()
 		for len(e.queue) > 0 {
 			packet, e.queue = e.queue[0], e.queue[1:]
-			e.VM.Push(e.Func)
-			e.VM.Push(e.Self())
-			e.VM.Push(luaconv.Value(e.VM, packet.Payload))
-			e.VM.Push(e.Sender(packet.sender))
-			if err := e.VM.PCall(3, 0, nil); err != nil {
+			l.Push(e.fn)
+			l.Push(e.bind)
+			l.Push(luaconv.Value(l, packet.Payload))
+			l.Push(e.Sender(l, packet.sender))
+			if err := l.PCall(3, 0, nil); err != nil {
 				return err
 			}
 		}
@@ -189,21 +189,21 @@ func (e *zmqEvent) Update(time.Duration) error {
 
 // Overwrite Destory function which inherit from goczmq.Channeler,
 // making sure ZMQEvent will be stop when it's called.
-func (e *zmqEvent) Destory() {
+func (e *localZmqEvent) Destory() {
 	e.Store(uint32(event.COMPLETE))
 	e.Channeler.Destroy()
 }
 
 // Stop ZMQEvent and destory it.
-func (e *zmqEvent) Stop() {
+func (e *localZmqEvent) Stop() {
 	e.Destory()
 }
 
 // Extracting ZMQEvent from lua table.
-func CheckZMQEvent(l *lua.LState, n int) *zmqEvent {
+func checkZMQEvent(l *lua.LState, n int) *localZmqEvent {
 	if self := l.CheckTable(1); self != nil {
 		if data, ok := self.Metatable.(*lua.LUserData); ok {
-			if e, ok := data.Value.(*zmqEvent); ok {
+			if e, ok := data.Value.(*localZmqEvent); ok {
 				return e
 			}
 		}
@@ -212,16 +212,14 @@ func CheckZMQEvent(l *lua.LState, n int) *zmqEvent {
 	return nil
 }
 
-var (
-	zmqEventFuncs = map[string]lua.LGFunction{
-		"send": zmq_event_send,
-		"stop": zmq_event_stop,
-	}
-)
+var localZmqEventFuncs = map[string]lua.LGFunction{
+	"send": local_zmq_event_send,
+	"stop": local_zmq_event_stop,
+}
 
 // Function binding which send ZMQPacket to another.
-func zmq_event_send(l *lua.LState) int {
-	e := CheckZMQEvent(l, 1)
+func local_zmq_event_send(l *lua.LState) int {
+	e := checkZMQEvent(l, 1)
 	if e == nil {
 		return 0
 	}
@@ -239,24 +237,13 @@ func zmq_event_send(l *lua.LState) int {
 }
 
 // Function binding for stoping ZMQEvent.
-func zmq_event_stop(l *lua.LState) int {
-	e := CheckZMQEvent(l, 1)
+func local_zmq_event_stop(l *lua.LState) int {
+	e := checkZMQEvent(l, 1)
 	if e == nil {
 		return 0
 	}
 	e.Stop()
 	return 0
-}
-
-// Create a lua table for ZMQEvent, allowing access from lua script.
-func (e *zmqEvent) Self() lua.LValue {
-	if e.self != nil {
-		return e.self
-	}
-	funcs := zmqEventFuncs
-	e.self = e.VM.SetFuncs(e.VM.CreateTable(0, len(funcs)), funcs)
-	e.self.Metatable = &lua.LUserData{Value: e}
-	return e.self
 }
 
 // Specific key to store frame info on lua table.
@@ -265,10 +252,10 @@ const (
 )
 
 // Extracting ZMQEvent and frame info from lua table.
-func CheckZMQEventSender(l *lua.LState, n int) (*zmqEvent, []byte) {
+func CheckZMQEventSender(l *lua.LState, n int) (*localZmqEvent, []byte) {
 	if self := l.CheckTable(1); self != nil {
 		if data, ok := self.Metatable.(*lua.LUserData); ok {
-			if e, ok := data.Value.(*zmqEvent); ok {
+			if e, ok := data.Value.(*localZmqEvent); ok {
 				v := self.RawGetString(zmqEventSender)
 				return e, []byte(v.String())
 			}
@@ -304,7 +291,7 @@ func zmq_sender_send(l *lua.LState) int {
 }
 
 // Create a sender object for router to reply to
-func (e *zmqEvent) Sender(frame []byte) lua.LValue {
+func (e *localZmqEvent) Sender(l *lua.LState, frame []byte) lua.LValue {
 	switch {
 	case frame == nil:
 		fallthrough
@@ -312,8 +299,8 @@ func (e *zmqEvent) Sender(frame []byte) lua.LValue {
 		return lua.LNil
 	}
 	funcs := zmqEventSenderFuncs
-	sender := e.VM.SetFuncs(e.VM.CreateTable(0, len(funcs)+1), funcs)
-	sender.RawSetString(zmqEventSender, luaconv.Value(e.VM, frame))
+	sender := l.SetFuncs(l.CreateTable(0, len(funcs)+1), funcs)
+	sender.RawSetString(zmqEventSender, luaconv.Value(l, frame))
 	sender.Metatable = &lua.LUserData{Value: e}
 	return sender
 }

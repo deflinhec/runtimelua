@@ -1,8 +1,10 @@
-package event
+package runtimelua
 
 import (
 	"sync/atomic"
 	"time"
+
+	lua "github.com/yuin/gopher-lua"
 )
 
 type TimerEvent struct {
@@ -34,7 +36,7 @@ func (e *TimerEvent) Continue() bool {
 	return e.Delay > 0
 }
 
-func (e *TimerEvent) Update(elapse time.Duration) error {
+func (e *TimerEvent) Update(elapse time.Duration, l *lua.LState) error {
 	e.Delay -= elapse
 	if e.Delay > 0 {
 		return nil

@@ -1,4 +1,4 @@
-package module_test
+package runtimelua_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/deflinhec/runtimelua"
 	"github.com/go-redis/redis/v8"
+	"go.uber.org/zap"
 
 	"github.com/alicebob/miniredis"
 )
@@ -21,6 +22,7 @@ func TestRedisModuleGetSet(t *testing.T) {
 		context.Background(), time.Second*10,
 	)
 	defer ctxCancelFn()
+	logger, _ := zap.NewDevelopment()
 	test := &TestingModule{cancel: ctxCancelFn}
 	defer test.validate(t)
 	newRuntimeWithModules(t, map[string]string{
@@ -35,9 +37,10 @@ func TestRedisModuleGetSet(t *testing.T) {
 		test.done()
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleRedis(&redis.Options{
-			Addr: s.Addr(),
-		}),
+		runtimelua.WithModuleRedis(logger,
+			&redis.Options{
+				Addr: s.Addr(),
+			}),
 		runtimelua.WithModule(test),
 	).Wait()
 }
@@ -47,6 +50,7 @@ func TestRedisModulePubSub(t *testing.T) {
 		context.Background(), time.Second*10,
 	)
 	defer ctxCancelFn()
+	logger, _ := zap.NewDevelopment()
 	test := &TestingModule{cancel: ctxCancelFn}
 	defer test.validate(t)
 	newRuntimeWithModules(t, map[string]string{
@@ -61,9 +65,10 @@ func TestRedisModulePubSub(t *testing.T) {
 		end)
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleRedis(&redis.Options{
-			Addr: "localhost:6379",
-		}),
+		runtimelua.WithModuleRedis(logger,
+			&redis.Options{
+				Addr: "localhost:6379",
+			}),
 		runtimelua.WithModule(test),
 	)
 	newRuntimeWithModules(t, map[string]string{
@@ -77,10 +82,11 @@ func TestRedisModulePubSub(t *testing.T) {
 		end)
 		`,
 	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleEvent(),
-		runtimelua.WithModuleRedis(&redis.Options{
-			Addr: "localhost:6379",
-		}),
+		runtimelua.WithModuleEvent(logger),
+		runtimelua.WithModuleRedis(logger,
+			&redis.Options{
+				Addr: "localhost:6379",
+			}),
 		runtimelua.WithModule(test),
 	).Wait()
 }

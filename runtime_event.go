@@ -1,13 +1,15 @@
-package event
+package runtimelua
 
 import (
 	"time"
+
+	lua "github.com/yuin/gopher-lua"
 )
 
 type Event interface {
 	Valid() bool
 
-	Update(time.Duration) error
+	Update(time.Duration, *lua.LState) error
 
 	Continue() bool
 
@@ -24,7 +26,7 @@ func (p *EventType) Priority() int {
 	return 1
 }
 
-func (p *EventType) Update(time.Duration) error {
+func (p *EventType) Update(time.Duration, *lua.LState) error {
 	return nil
 }
 

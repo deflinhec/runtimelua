@@ -1,4 +1,4 @@
-package event
+package runtimelua
 
 import (
 	"sync/atomic"

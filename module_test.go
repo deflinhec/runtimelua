@@ -1,4 +1,4 @@
-package module_test
+package runtimelua_test
 
 import (
 	"context"
@@ -33,7 +33,11 @@ func newRuntimeWithModules(t *testing.T, modules map[string]string,
 		}
 	}
 	lua.LuaLDir = dir
-	r := runtimelua.NewRuntime(options...)
+	logger, _ := zap.NewDevelopment()
+	r := runtimelua.NewRuntime(
+		runtimelua.NewScriptModule(logger),
+		options...,
+	)
 	r.Startup()
 	return r
 }

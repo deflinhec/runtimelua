@@ -3,12 +3,20 @@
 
 package runtimelua
 
-import "github.com/deflinhec/runtimelua/module"
+import "go.uber.org/zap"
 
 // ZMQ Require extra library dependency.
-func WithModuleZmq() Option {
+func WithModuleZmq(logger *zap.Logger) Option {
 	return newOption(func(r *Runtime) {
-		mod := module.ZMQModule(r)
+		mod := &localZmqModule{
+			localRuntimeModule: localRuntimeModule{
+				localModule: localModule{
+					name: "zmq",
+				},
+				runtime: r,
+			},
+			logger: logger,
+		}
 		r.preloads[mod.Name()] = mod
 	})
 }
