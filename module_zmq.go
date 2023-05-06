@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deflinhec/runtimelua/event"
 	"github.com/deflinhec/runtimelua/luaconv"
 	"go.uber.org/zap"
 
@@ -141,7 +140,7 @@ func (p *zmqPacket) Deserialize(b [][]byte) error {
 
 type localZmqEvent struct {
 	*goczmq.Channeler
-	event.StateEvent
+	StateEvent
 	sync.Mutex
 	queue []*zmqPacket
 	bind  *lua.LTable
@@ -151,12 +150,12 @@ type localZmqEvent struct {
 // Initialize an goroutine which process received request,
 // and handle ZMQPacket within PROGRESS state.
 func (e *localZmqEvent) Update(d time.Duration, l *lua.LState) error {
-	switch event.State(e.Load()) {
-	case event.INITIALIZE:
-		e.Store(uint32(event.PROGRESS))
+	switch EventState(e.Load()) {
+	case EVENT_STATE_INITIALIZE:
+		e.Store(uint32(EVENT_STATE_PROGRESS))
 		e.queue = make([]*zmqPacket, 0, 128)
 		go func() {
-			defer e.Store(uint32(event.COMPLETE))
+			defer e.Store(uint32(EVENT_STATE_COMPLETE))
 			for request := range e.RecvChan {
 				packet := &zmqPacket{}
 				if err := packet.Deserialize(request); err != nil {
@@ -169,7 +168,7 @@ func (e *localZmqEvent) Update(d time.Duration, l *lua.LState) error {
 				log.Println(packet)
 			}
 		}()
-	case event.PROGRESS:
+	case EVENT_STATE_PROGRESS:
 		var packet *zmqPacket
 		e.Lock()
 		defer e.Unlock()
@@ -190,7 +189,7 @@ func (e *localZmqEvent) Update(d time.Duration, l *lua.LState) error {
 // Overwrite Destory function which inherit from goczmq.Channeler,
 // making sure ZMQEvent will be stop when it's called.
 func (e *localZmqEvent) Destory() {
-	e.Store(uint32(event.COMPLETE))
+	e.Store(uint32(EVENT_STATE_COMPLETE))
 	e.Channeler.Destroy()
 }
 

@@ -5,13 +5,13 @@ import (
 	"time"
 )
 
-type State uint32
+type EventState uint32
 
 const (
-	INITIALIZE State = iota
-	PROGRESS
-	FINALIZE
-	COMPLETE
+	EVENT_STATE_INITIALIZE EventState = iota
+	EVENT_STATE_PROGRESS
+	EVENT_STATE_FINALIZE
+	EVENT_STATE_COMPLETE
 )
 
 type StateEvent struct {
@@ -28,27 +28,27 @@ func (e *StateEvent) Store(value uint32) {
 }
 
 func (e *StateEvent) Valid() bool {
-	return e.Load() != uint32(COMPLETE)
+	return e.Load() != uint32(EVENT_STATE_COMPLETE)
 }
 
 func (e *StateEvent) Continue() bool {
-	return e.Load() != uint32(COMPLETE)
+	return e.Load() != uint32(EVENT_STATE_COMPLETE)
 }
 
 func (e *StateEvent) Update(elapse time.Duration) error {
-	switch State(e.Load()) {
-	case INITIALIZE:
-		e.Store(uint32(PROGRESS))
-	case PROGRESS:
-		e.Store(uint32(FINALIZE))
-	case FINALIZE:
-		e.Store(uint32(COMPLETE))
-	case COMPLETE:
+	switch EventState(e.Load()) {
+	case EVENT_STATE_INITIALIZE:
+		e.Store(uint32(EVENT_STATE_PROGRESS))
+	case EVENT_STATE_PROGRESS:
+		e.Store(uint32(EVENT_STATE_FINALIZE))
+	case EVENT_STATE_FINALIZE:
+		e.Store(uint32(EVENT_STATE_COMPLETE))
+	case EVENT_STATE_COMPLETE:
 
 	}
 	return nil
 }
 
 func (e *StateEvent) Stop() {
-	e.Store(uint32(COMPLETE))
+	e.Store(uint32(EVENT_STATE_COMPLETE))
 }

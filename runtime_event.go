@@ -34,16 +34,16 @@ func (p *EventType) Continue() bool {
 	return false
 }
 
-type EventQueue []Event
+type EventSequence []Event
 
-func (s EventQueue) Len() int {
+func (s EventSequence) Len() int {
 	return len(s)
 }
 
-func (s EventQueue) Swap(i, j int) {
+func (s EventSequence) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s EventQueue) Less(i, j int) bool {
+func (s EventSequence) Less(i, j int) bool {
 	return s[i].Priority() < s[j].Priority()
 }

@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deflinhec/runtimelua/event"
 	"github.com/deflinhec/runtimelua/luaconv"
 
 	"github.com/go-redis/redis/v8"
@@ -768,10 +767,10 @@ type pubSubEvent struct {
 }
 
 func (e *pubSubEvent) Update(elapse time.Duration, l *lua.LState) error {
-	switch event.State(e.Load()) {
-	case event.INITIALIZE:
+	switch EventState(e.Load()) {
+	case EVENT_STATE_INITIALIZE:
 		l.Push(e.Func)
-		defer e.Store(uint32(event.COMPLETE))
+		defer e.Store(uint32(EVENT_STATE_COMPLETE))
 		for _, argument := range e.Arguments {
 			l.Push(argument)
 		}

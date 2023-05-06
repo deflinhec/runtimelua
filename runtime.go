@@ -129,8 +129,8 @@ func (r *Runtime) Startup() {
 func (r *Runtime) process() {
 	var e Event
 	eventUpdateTime := time.Now()
-	eventQueue := make(EventQueue, 0)
-	eventSwapQueue := make(EventQueue, 0)
+	eventQueue := make(EventSequence, 0)
+	eventSwapQueue := make(EventSequence, 0)
 
 IncommingLoop:
 	for {

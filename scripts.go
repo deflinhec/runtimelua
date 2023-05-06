@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deflinhec/runtimelua/event"
 	"github.com/dietsche/rfsnotify"
 	lua "github.com/yuin/gopher-lua"
 	"go.uber.org/atomic"
@@ -409,10 +408,10 @@ type localHotfixEvent struct {
 }
 
 func (e *localHotfixEvent) Update(d time.Duration, l *lua.LState) error {
-	switch event.State(e.Load()) {
-	case event.INITIALIZE:
+	switch EventState(e.Load()) {
+	case EVENT_STATE_INITIALIZE:
 		var err error
-		defer e.Store(uint32(event.COMPLETE))
+		defer e.Store(uint32(EVENT_STATE_COMPLETE))
 		if err = e.module.hotfix(l); err != nil {
 			e.logger.Warn("cannot perform hotfix",
 				zap.String("module", e.module.Name),
@@ -436,10 +435,10 @@ type localPatchEvent struct {
 }
 
 func (e *localPatchEvent) Update(d time.Duration, l *lua.LState) error {
-	switch event.State(e.Load()) {
-	case event.INITIALIZE:
+	switch EventState(e.Load()) {
+	case EVENT_STATE_INITIALIZE:
 		var err error
-		defer e.Store(uint32(event.COMPLETE))
+		defer e.Store(uint32(EVENT_STATE_COMPLETE))
 		if err = e.module.patch(l); err != nil {
 			e.logger.Warn("cannot perform hotfix",
 				zap.String("module", e.module.Name),

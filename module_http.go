@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deflinhec/runtimelua/event"
 	"github.com/deflinhec/runtimelua/luaconv"
 	"go.uber.org/zap"
 
@@ -198,22 +197,22 @@ type localHTTPRequestEvent struct {
 }
 
 func (e *localHTTPRequestEvent) Update(d time.Duration, l *lua.LState) error {
-	switch event.State(e.Load()) {
-	case event.INITIALIZE:
-		e.Store(uint32(event.PROGRESS))
+	switch EventState(e.Load()) {
+	case EVENT_STATE_INITIALIZE:
+		e.Store(uint32(EVENT_STATE_PROGRESS))
 		go func() {
-			defer e.Store(uint32(event.FINALIZE))
+			defer e.Store(uint32(EVENT_STATE_FINALIZE))
 			if resp, err := e.Do(e.Request); err != nil {
 				e.err = fmt.Errorf("HTTP request error: %v", err.Error())
 			} else {
 				e.resp = resp
 			}
 		}()
-	case event.FINALIZE:
+	case EVENT_STATE_FINALIZE:
 		resp := e.resp
 		var body []byte
 		var headers map[string]interface{}
-		defer e.Store(uint32(event.COMPLETE))
+		defer e.Store(uint32(EVENT_STATE_COMPLETE))
 		defer e.ctxCancelFn()
 		for headers != nil {
 			if e.err != nil {
