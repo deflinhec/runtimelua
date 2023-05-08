@@ -2,8 +2,8 @@ package runtimelua_test
 
 import (
 	"context"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/deflinhec/runtimelua"
 	"github.com/go-redis/redis/v8"
@@ -18,15 +18,16 @@ func TestRedisModuleGetSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	ctx, ctxCancelFn := context.WithTimeout(
-		context.Background(), time.Second*10,
-	)
-	defer ctxCancelFn()
+
+	// Setup shared context
+	wg := &sync.WaitGroup{}
+	ctx := context.Background()
 	logger, _ := zap.NewDevelopment()
-	test := &TestingModule{cancel: ctxCancelFn}
-	defer test.validate(t)
+	test := &TestingModule{T: t}
+
 	newRuntimeWithModules(t, map[string]string{
 		"main": `
+		local runtime = require 'runtime'
 		local test = require 'test'
 		local redis = require 'redis'
 		redis.set("key", 1)
@@ -34,59 +35,72 @@ func TestRedisModuleGetSet(t *testing.T) {
 		if v ~= 1 then
 			test.fatal(("%q"):format(v))
 		end
-		test.done()
+		runtime.exit()
 		`,
-	}, runtimelua.WithContext(ctx),
+	},
+		runtimelua.WithWaitGroup(wg),
+		runtimelua.WithContext(ctx),
+		runtimelua.WithModule(test),
 		runtimelua.WithModuleRedis(logger,
 			&redis.Options{
 				Addr: s.Addr(),
 			}),
-		runtimelua.WithModule(test),
-	).Wait()
+	)
+	wg.Wait()
 }
 
 func TestRedisModulePubSub(t *testing.T) {
-	ctx, ctxCancelFn := context.WithTimeout(
-		context.Background(), time.Second*10,
-	)
-	defer ctxCancelFn()
+	// Setup shared context
+	wg := &sync.WaitGroup{}
+	ctx := context.Background()
 	logger, _ := zap.NewDevelopment()
-	test := &TestingModule{cancel: ctxCancelFn}
-	defer test.validate(t)
+	test := &TestingModule{T: t}
+
 	newRuntimeWithModules(t, map[string]string{
 		"main": `
+		local runtime = require 'runtime'
 		local test = require 'test'
 		local redis = require 'redis'
+		local event = require 'event'
 		redis.subscribe("sub", function(v)
 			if v ~= 1 then
 				test.fatal(("%q"):format(v))
 			end
-			test.done()
+			runtime.exit()
 		end)
-		`,
-	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleRedis(logger,
-			&redis.Options{
-				Addr: "localhost:6379",
-			}),
-		runtimelua.WithModule(test),
-	)
-	newRuntimeWithModules(t, map[string]string{
-		"main": `
-		local test = require 'test'
-		local redis = require 'redis'
-		local event = require 'event'
-		redis.publish("sub", 1)
-		event.delay(5, function(_timer)
+		event.delay(5, function(_)
 			test.fatal("timeout")
+			runtime.exit()
 		end)
 		`,
-	}, runtimelua.WithContext(ctx),
+	},
+		runtimelua.WithWaitGroup(wg),
+		runtimelua.WithContext(ctx),
+		runtimelua.WithModule(test),
 		runtimelua.WithModuleEvent(logger),
 		runtimelua.WithModuleRedis(logger,
 			&redis.Options{
 				Addr: "localhost:6379",
 			}),
+	)
+	newRuntimeWithModules(t, map[string]string{
+		"main": `
+		local runtime = require 'runtime'
+		local test = require 'test'
+		local redis = require 'redis'
+		local event = require 'event'
+		redis.publish("sub", 1)
+		runtime.exit()
+		`,
+	},
+		runtimelua.WithWaitGroup(wg),
+		runtimelua.WithContext(ctx),
 		runtimelua.WithModule(test),
-	).Wait()
+		runtimelua.WithModuleEvent(logger),
+		runtimelua.WithModuleRedis(logger,
+			&redis.Options{
+				Addr: "localhost:6379",
+			}),
+	)
+	wg.Wait()
 }

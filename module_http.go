@@ -235,21 +235,21 @@ func (e *localHTTPRequestEvent) Update(d time.Duration, l *lua.LState) error {
 				}
 			}
 		}
+		// HTTP Status Code
 		l.Push(e.Func)
-		if e.err != nil {
-			l.Push(lua.LBool(false))
-			l.Push(lua.LString(e.err.Error()))
-			l.Push(lua.LNil)
-			l.Push(lua.LNil)
-			l.Push(lua.LNil)
+		if e.resp == nil {
+			l.Push(lua.LNumber(http.StatusBadGateway))
 		} else {
-			l.Push(lua.LBool(true))
+			l.Push(lua.LNumber(e.resp.StatusCode))
+		}
+		if e.err != nil {
 			l.Push(lua.LNil)
-			l.Push(lua.LNumber(resp.StatusCode))
+			l.Push(lua.LString(e.err.Error()))
+		} else {
 			l.Push(luaconv.Map(l, headers))
 			l.Push(lua.LString(string(body)))
 		}
-		return l.PCall(5, 0, nil)
+		return l.PCall(3, 0, nil)
 	}
 	return nil
 }
