@@ -1,3 +1,17 @@
+// Copyright 2023 Deflinhec
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package runtimelua
 
 import (
@@ -80,7 +94,7 @@ func NewRuntimeWithConfig(scripts ScriptModule, opts lua.Options, options ...Opt
 }
 
 func (r *Runtime) Startup() {
-	for name, lib := range map[string]lua.LGFunction{
+	stdlibs := map[string]lua.LGFunction{
 		lua.BaseLibName:      lua.OpenBase,
 		lua.TabLibName:       lua.OpenTable,
 		lua.OsLibName:        auxlib.OpenOs,
@@ -89,20 +103,18 @@ func (r *Runtime) Startup() {
 		lua.MathLibName:      lua.OpenMath,
 		lua.CoroutineLibName: lua.OpenCoroutine,
 		lua.LoadLibName:      r.scripts.OpenPackage(),
-	} {
+	}
+	loadlibs := make([]string, 0, len(stdlibs))
+	for name, lib := range stdlibs {
 		r.vm.Push(r.vm.NewFunction(lib))
 		r.vm.Push(lua.LString(name))
 		r.vm.Call(1, 0)
-		r.logger.Debug("load", zap.String("lib", name))
+		if len(name) > 0 {
+			loadlibs = append(loadlibs, name)
+		}
 	}
-	for name, lib := range r.auxlibs {
-		r.vm.PreloadModule(name, lib)
-		r.logger.Debug("preload", zap.String("lib", name))
-	}
-	for name, module := range r.preloads {
-		r.vm.PreloadModule(name, module.Open())
-		r.logger.Debug("preload", zap.String("module", name))
-	}
+	preloadlibs := make([]string, 0, len(r.preloads)+1)
+	preloadlibs = append(preloadlibs, "runtime")
 	module := lua.LGFunction(func(l *lua.LState) int {
 		functions := map[string]lua.LGFunction{
 			"exit": r.exit,
@@ -111,6 +123,20 @@ func (r *Runtime) Startup() {
 		return 1
 	})
 	r.vm.PreloadModule("runtime", module)
+	for name, lib := range r.auxlibs {
+		r.vm.PreloadModule(name, lib)
+		preloadlibs = append(preloadlibs, name)
+	}
+	for name, module := range r.preloads {
+		r.vm.PreloadModule(name, module.Open())
+		preloadlibs = append(preloadlibs, name)
+	}
+	r.logger.Debug("Runtime information",
+		zap.Strings("load", loadlibs),
+	)
+	r.logger.Debug("Runtime information",
+		zap.Strings("preload", preloadlibs),
+	)
 	r.wg.Add(1)
 	go r.process()
 	r.vm.SetContext(r.ctx)
@@ -128,6 +154,10 @@ func (r *Runtime) Startup() {
 			r.evaluate(luaconv.LuaValue(ret))
 		}
 	}
+}
+
+func (r *Runtime) Shutdown() {
+	r.ctxCancelFn()
 }
 
 type localExitEvent struct {
@@ -191,14 +221,11 @@ IncommingLoop:
 			eventQueue, eventSwapQueue = eventSwapQueue, eventQueue
 			r.Unlock()
 		case <-time.After(time.Second):
-			r.logger.Debug("event queue tick",
+			r.logger.Debug("EventQueue information",
 				zap.Int("total", len(eventQueue)),
 			)
 		case e = <-r.EventQueue:
 			eventQueue = append(eventQueue, e)
-			r.logger.Debug("event queue received",
-				zap.Int("total", len(eventQueue)),
-			)
 		}
 	}
 	r.vm.Close()
