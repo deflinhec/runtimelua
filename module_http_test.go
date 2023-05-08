@@ -4,28 +4,29 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/deflinhec/runtimelua"
 	"go.uber.org/zap"
 )
 
 func TestHttpModuleRequest(t *testing.T) {
+	// Start a local http server
 	svr := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 	defer svr.Close()
-	ctx, ctxCancelFn := context.WithTimeout(
-		context.Background(), time.Second*10,
-	)
-	defer ctxCancelFn()
+
+	wg := &sync.WaitGroup{}
+	ctx := context.Background()
 	logger, _ := zap.NewDevelopment()
-	test := &TestingModule{cancel: ctxCancelFn}
-	defer test.validate(t)
+	test := &TestingModule{T: t}
+
 	newRuntimeWithModules(t, map[string]string{
 		"main": `
+		local runtime = require 'runtime'
 		local http = require 'http'
 		local test = require 'test'
 		local const = {
@@ -44,29 +45,34 @@ func TestHttpModuleRequest(t *testing.T) {
 		elseif code >= 400 then
 			test.fatal(("http code %q"):format(code))
 		end
-		test.done()
+		runtime.exit()
 		`,
-	}, runtimelua.WithContext(ctx),
+	},
+		runtimelua.WithContext(ctx),
+		runtimelua.WithWaitGroup(wg),
 		runtimelua.WithModuleHttp(logger),
 		runtimelua.WithModule(test),
-	).Wait()
+	)
+	wg.Wait()
 }
 
 func TestHttpModuleAsyncRequest(t *testing.T) {
+	// Start a local http server
 	svr := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 	defer svr.Close()
-	ctx, ctxCancelFn := context.WithTimeout(
-		context.Background(), time.Second*10,
-	)
-	defer ctxCancelFn()
+
+	// Setup shared context
+	wg := &sync.WaitGroup{}
+	ctx := context.Background()
 	logger, _ := zap.NewDevelopment()
-	test := &TestingModule{cancel: ctxCancelFn}
-	defer test.validate(t)
+	test := &TestingModule{T: t}
+
 	newRuntimeWithModules(t, map[string]string{
 		"main": `
+		local runtime = require 'runtime'
 		local event = require 'event'
 		local http = require 'http'
 		local test = require 'test'
@@ -77,30 +83,28 @@ func TestHttpModuleAsyncRequest(t *testing.T) {
 				["Accept"] = "application/json"
 			},
 		}
-		local function async(success, err, code, headers, body)
-			if not success then
-				test.fatal(err)
-			elseif code >= 400 then
-				test.fatal(("http code %q"):format(code))
-			end
-			test.done()
-		end
 		local url = "` + svr.URL + `"
 		local success, err = pcall(http.request_async,
-			async, url, "GET", const.headers, content, const.timeout
+			function(code, headers, body)
+				if code ~= 200 then
+					test.fatal(body)
+				end
+				runtime.exit()
+			end, 
+			url, "GET", const.headers, content, const.timeout
 		)
 		if not success then
 			test.fatal("request failed"..err)
 		elseif err ~= nil then
 			test.fatal(err)
 		end
-		event.delay(5, function(_timer)
-			test.fatal("timeout")
-		end)
 		`,
-	}, runtimelua.WithContext(ctx),
+	},
+		runtimelua.WithWaitGroup(wg),
+		runtimelua.WithContext(ctx),
+		runtimelua.WithModule(test),
 		runtimelua.WithModuleEvent(logger),
 		runtimelua.WithModuleHttp(logger),
-		runtimelua.WithModule(test),
-	).Wait()
+	)
+	wg.Wait()
 }

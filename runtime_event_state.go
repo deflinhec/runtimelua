@@ -3,6 +3,8 @@ package runtimelua
 import (
 	"sync/atomic"
 	"time"
+
+	lua "github.com/yuin/gopher-lua"
 )
 
 type EventState uint32
@@ -35,7 +37,7 @@ func (e *StateEvent) Continue() bool {
 	return e.Load() != uint32(EVENT_STATE_COMPLETE)
 }
 
-func (e *StateEvent) Update(elapse time.Duration) error {
+func (e *StateEvent) Update(d time.Duration, l *lua.LState) error {
 	switch EventState(e.Load()) {
 	case EVENT_STATE_INITIALIZE:
 		e.Store(uint32(EVENT_STATE_PROGRESS))

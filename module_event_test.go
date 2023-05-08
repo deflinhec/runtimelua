@@ -2,21 +2,21 @@ package runtimelua_test
 
 import (
 	"context"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/deflinhec/runtimelua"
 	"go.uber.org/zap"
 )
 
 func TestEventModule(t *testing.T) {
-	ctx, ctxCancelFn := context.WithTimeout(
-		context.Background(), time.Second*10,
-	)
-	defer ctxCancelFn()
+	// Setup shared context
+	wg := &sync.WaitGroup{}
+	ctx := context.Background()
 	logger, _ := zap.NewDevelopment()
-	test := &TestingModule{cancel: ctxCancelFn}
-	newRuntimeWithModules(t, map[string]string{
+	test := &TestingModule{T: t}
+
+	defer newRuntimeWithModules(t, map[string]string{
 		"main": `
 		local looptimer, delaytimer
 		local test = require 'test'
@@ -36,7 +36,7 @@ func TestEventModule(t *testing.T) {
 				count.delay = count.delay + 1
 			end
 		)
-		-- test result
+		-- Validate test result
 		event.delay(7, function(_)
 			if count.loop ~= 5 then
 				test.fatal("loop count not equal")
@@ -47,11 +47,14 @@ func TestEventModule(t *testing.T) {
 			elseif not looptimer:valid() then
 				test.fatal("looptimer valid")
 			end
-			test.done()
+			runtime.exit()
 		end)
 		`,
-	}, runtimelua.WithContext(ctx),
-		runtimelua.WithModuleEvent(logger),
+	},
+		runtimelua.WithContext(ctx),
+		runtimelua.WithWaitGroup(wg),
 		runtimelua.WithModule(test),
-	).Wait()
+		runtimelua.WithModuleEvent(logger),
+	)
+	wg.Wait()
 }

@@ -2,18 +2,15 @@ package runtimelua_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/deflinhec/runtimelua"
 
 	"github.com/google/uuid"
 	lua "github.com/yuin/gopher-lua"
-	"go.uber.org/multierr"
 	"go.uber.org/zap"
 )
 
@@ -43,9 +40,8 @@ func newRuntimeWithModules(t *testing.T, modules map[string]string,
 }
 
 type TestingModule struct {
-	sync.Mutex
-	err    error
-	cancel context.CancelFunc
+	context.CancelFunc
+	*testing.T
 }
 
 func (t *TestingModule) Name() string {
@@ -53,35 +49,32 @@ func (t *TestingModule) Name() string {
 }
 
 func (m *TestingModule) fatal(l *lua.LState) int {
-	msg := l.CheckString(1)
-	err := errors.New(msg)
-	m.Lock()
-	m.err = multierr.Append(m.err, err)
-	m.Unlock()
-	go m.cancel()
+	m.T.Fatal(l.OptString(1, ""))
 	return 0
 }
 
-func (m *TestingModule) Initialize(*zap.Logger) {
-
-}
-
-func (m *TestingModule) done(l *lua.LState) int {
-	go m.cancel()
+func (m *TestingModule) fail(l *lua.LState) int {
+	m.T.Fail()
 	return 0
 }
 
-func (m *TestingModule) validate(t *testing.T) {
-	if m.err != nil {
-		t.Fatal(m.err)
-	}
+func (m *TestingModule) failNow(l *lua.LState) int {
+	m.T.FailNow()
+	return 0
+}
+
+func (m *TestingModule) log(l *lua.LState) int {
+	m.T.Log(l.OptString(1, ""))
+	return 0
 }
 
 func (m *TestingModule) Open() lua.LGFunction {
 	return func(l *lua.LState) int {
 		functions := map[string]lua.LGFunction{
-			"fatal": m.fatal,
-			"done":  m.done,
+			"fatal":   m.fatal,
+			"fail":    m.fail,
+			"failNow": m.failNow,
+			"log":     m.log,
 		}
 		l.Push(l.SetFuncs(l.CreateTable(0, len(functions)), functions))
 		return 1

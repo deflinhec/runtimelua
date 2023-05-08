@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/deflinhec/runtimelua/auxlib"
 	"github.com/deflinhec/runtimelua/luaconv"
@@ -40,6 +41,12 @@ func WithLogger(logger *zap.Logger) Option {
 func WithContext(ctx context.Context) Option {
 	return newOption(func(r *Runtime) {
 		r.ctx, r.ctxCancelFn = context.WithCancel(ctx)
+	})
+}
+
+func WithWaitGroup(wg *sync.WaitGroup) Option {
+	return newOption(func(r *Runtime) {
+		r.wg = wg
 	})
 }
 

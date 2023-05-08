@@ -79,10 +79,6 @@ func NewRuntimeWithConfig(scripts ScriptModule, opts lua.Options, options ...Opt
 	return r
 }
 
-func (r *Runtime) Wait() {
-	r.wg.Wait()
-}
-
 func (r *Runtime) Startup() {
 	for name, lib := range map[string]lua.LGFunction{
 		lua.BaseLibName:      lua.OpenBase,
@@ -107,6 +103,14 @@ func (r *Runtime) Startup() {
 		r.vm.PreloadModule(name, module.Open())
 		r.logger.Debug("preload", zap.String("module", name))
 	}
+	module := lua.LGFunction(func(l *lua.LState) int {
+		functions := map[string]lua.LGFunction{
+			"exit": r.exit,
+		}
+		l.Push(l.SetFuncs(l.CreateTable(0, len(functions)), functions))
+		return 1
+	})
+	r.vm.PreloadModule("runtime", module)
 	r.wg.Add(1)
 	go r.process()
 	r.vm.SetContext(r.ctx)
@@ -124,6 +128,32 @@ func (r *Runtime) Startup() {
 			r.evaluate(luaconv.LuaValue(ret))
 		}
 	}
+}
+
+type localExitEvent struct {
+	context.CancelFunc
+	StateEvent
+}
+
+func (e *localExitEvent) Update(d time.Duration, l *lua.LState) error {
+	e.StateEvent.Update(d, l)
+	e.CancelFunc()
+	return nil
+}
+
+func (r *Runtime) exit(l *lua.LState) int {
+	e := &localExitEvent{
+		CancelFunc: r.ctxCancelFn,
+	}
+	r.EventQueue <- e
+	return 0
+}
+
+func (r *Runtime) fatal() {
+	e := &localExitEvent{
+		CancelFunc: r.ctxCancelFn,
+	}
+	r.EventQueue <- e
 }
 
 func (r *Runtime) process() {
@@ -153,6 +183,7 @@ IncommingLoop:
 					} else {
 						r.evaluate(err)
 					}
+					break IncommingLoop
 				} else if e.Continue() {
 					eventSwapQueue = append(eventSwapQueue, e)
 				}
@@ -170,5 +201,6 @@ IncommingLoop:
 			)
 		}
 	}
+	r.vm.Close()
 	r.wg.Done()
 }
