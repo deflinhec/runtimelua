@@ -33,19 +33,16 @@ func (m *localEventModule) delay(l *lua.LState) int {
 		return 0
 	}
 
-	timer := l.CreateTable(0, len(localTimerEventFuncs))
-	timer = l.SetFuncs(timer, localTimerEventFuncs)
 	e := &localTimerEvent{
 		TimerEvent: TimerEvent{
 			Delay: time.Second * time.Duration(sec),
 		},
-		bind: timer, fn: fn,
+		fn: fn,
 	}
-	timer.Metatable = &lua.LUserData{Value: e}
 
 	e.Store(true)
 	m.runtime.EventQueue <- e
-	l.Push(timer)
+	l.Push(e.LuaValue(l))
 	return 1
 }
 
@@ -57,54 +54,16 @@ func (m *localEventModule) loop(l *lua.LState) int {
 		return 0
 	}
 
-	timer := l.CreateTable(0, len(localTimerEventFuncs))
-	timer = l.SetFuncs(timer, localTimerEventFuncs)
 	e := &localTimerEvent{
 		TimerEvent: TimerEvent{
 			Period: time.Second * time.Duration(sec),
 		},
-		bind: timer, fn: fn,
+		fn: fn,
 	}
-	timer.Metatable = &lua.LUserData{Value: e}
 
 	e.Store(true)
 	m.runtime.EventQueue <- e
-	l.Push(timer)
-	return 1
-}
-
-func checkLocalTimerEvent(l *lua.LState, n int) *localTimerEvent {
-	if self := l.CheckTable(1); self != nil {
-		if data, ok := self.Metatable.(*lua.LUserData); ok {
-			if e, ok := data.Value.(*localTimerEvent); ok {
-				return e
-			}
-		}
-	}
-	l.ArgError(n, "expect timerEvent")
-	return nil
-}
-
-var localTimerEventFuncs = map[string]lua.LGFunction{
-	"stop":  local_timer_event_stop,
-	"valid": local_timer_event_valid,
-}
-
-func local_timer_event_stop(l *lua.LState) int {
-	e := checkLocalTimerEvent(l, 1)
-	if e == nil {
-		return 0
-	}
-	e.Stop()
-	return 0
-}
-
-func local_timer_event_valid(l *lua.LState) int {
-	e := checkLocalTimerEvent(l, 1)
-	if e == nil {
-		return 0
-	}
-	l.Push(lua.LBool(e.Valid()))
+	l.Push(e.LuaValue(l))
 	return 1
 }
 
@@ -125,7 +84,7 @@ func (e *localTimerEvent) Update(elapse time.Duration, l *lua.LState) error {
 		return err
 	}
 	defer l.Pop(1)
-	if ret, ok := l.Get(-1).(lua.LBool); ok && ret == true {
+	if ret, ok := l.Get(-1).(lua.LBool); ok && ret == lua.LTrue {
 		e.Delay = e.Period
 	} else {
 		e.Store(false)
@@ -135,4 +94,28 @@ func (e *localTimerEvent) Update(elapse time.Duration, l *lua.LState) error {
 
 func (e *localTimerEvent) Stop() {
 	e.Store(false)
+}
+
+func (e *localTimerEvent) stop(l *lua.LState) int {
+	l.CheckTable(1)
+	e.Stop()
+	return 0
+}
+
+func (e *localTimerEvent) valid(l *lua.LState) int {
+	l.CheckTable(1)
+	l.Push(lua.LBool(e.Valid()))
+	return 1
+}
+
+func (e *localTimerEvent) LuaValue(l *lua.LState) lua.LValue {
+	if e.bind != nil {
+		return e.bind
+	}
+	functions := map[string]lua.LGFunction{
+		"stop":  e.stop,
+		"valid": e.valid,
+	}
+	e.bind = l.SetFuncs(l.CreateTable(0, len(functions)), functions)
+	return e.bind
 }
