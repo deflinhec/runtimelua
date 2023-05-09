@@ -1,6 +1,6 @@
 # Lua runtime Go framework
 
-> This project implement various optional modules for use within lua runtime.
+> A lua framework which base on golang, support Redis pub/sub, ZeroMQ, HTTP, Event and Real-time hot reload.
 
 ## Features
 
@@ -18,13 +18,11 @@
 * **redis** - Redis module to comminucate with redis sever, support pub/sub.
 * **zmq** (Optional build) - ZeroMQ module to create router and dealers.
 
-* **script hot reload** - Support for lua hot reload when files changed.
+* **Real-time hot reload** - Support for lua hot reload when files changed.
 
 ## Getting Started
 
-A quick demostration of this framework can be found under exmample directory. 
-
-[main.go](./example/main.go) and it's [main.lua](./example/script/main.lua).
+A quick demostration of this framework can be found under [example directory](./example). 
 
 ```shell
 cd example && go run main.go
