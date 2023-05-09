@@ -200,21 +200,24 @@ func WithLibBit64() Option {
 	})
 }
 
-func WithScript(script string) Option {
+// The script path for the runtime entrypoint. Default is main.
+func WithScriptEntry(path string) Option {
 	return newOption(func(r *Runtime) {
-		relPath, _ := filepath.Rel(lua.LuaLDir, script)
+		relPath, _ := filepath.Rel(lua.LuaLDir, path)
 		name := strings.TrimSuffix(relPath, filepath.Ext(relPath))
 		// Make paths Lua friendly.
 		r.script = strings.Replace(name, string(os.PathSeparator), ".", -1)
 	})
 }
 
+// Global variable which can be access within Lua runtime.
 func WithGlobal(key string, value interface{}) Option {
 	return newOption(func(r *Runtime) {
 		r.vm.SetGlobal(key, luaconv.Value(r.vm, value))
 	})
 }
 
+// Evaluation handler which handle the return value of script entry.
 func WithEvaluation(evaluation func(interface{})) Option {
 	return newOption(func(r *Runtime) {
 		r.evaluate = evaluation

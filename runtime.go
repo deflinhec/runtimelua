@@ -28,7 +28,6 @@ import (
 )
 
 type Runtime struct {
-	sync.RWMutex
 	logger *zap.Logger
 	vm     *lua.LState
 	wg     *sync.WaitGroup
@@ -179,18 +178,11 @@ func (r *Runtime) exit(l *lua.LState) int {
 	return 0
 }
 
-func (r *Runtime) fatal() {
-	e := &localExitEvent{
-		CancelFunc: r.ctxCancelFn,
-	}
-	r.EventQueue <- e
-}
-
 func (r *Runtime) process() {
 	var e Event
 	eventUpdateTime := time.Now()
-	eventQueue := make(EventSequence, 0)
-	eventSwapQueue := make(EventSequence, 0)
+	eventQueue := make(EventSequence, 0, 32)
+	eventSwapQueue := make(EventSequence, 0, 32)
 
 IncommingLoop:
 	for {
@@ -199,7 +191,6 @@ IncommingLoop:
 			break IncommingLoop
 		case <-time.After(time.Millisecond * 66):
 			sort.Sort(eventQueue)
-			r.Lock()
 			r.vm.Pop(r.vm.GetTop())
 			elpase := time.Since(eventUpdateTime)
 			eventUpdateTime = time.Now()
@@ -219,7 +210,6 @@ IncommingLoop:
 				}
 			}
 			eventQueue, eventSwapQueue = eventSwapQueue, eventQueue
-			r.Unlock()
 		case <-time.After(time.Second):
 			r.logger.Debug("EventQueue information",
 				zap.Int("total", len(eventQueue)),
