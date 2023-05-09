@@ -1,4 +1,4 @@
-# Lua runtime Go framework
+# Lua runtime framework
 
 > A lua framework which base on golang, support Redis pub/sub, ZeroMQ, HTTP, Event and Real-time hot reload.
 
