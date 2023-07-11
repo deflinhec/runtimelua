@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -380,7 +381,22 @@ func (sm *localScriptModule) OpenPackage() lua.LGFunction {
 	return func(L *lua.LState) int {
 		loLoaderCache := func(L *lua.LState) int {
 			name := L.CheckString(1)
-			module, ok := sm.get(name)
+			var ok bool
+			var module *localFileCache
+			dir := lua.LuaLDir + lua.LuaDirSep
+			packagemod := L.RegisterModule(lua.LoadLibName, loFuncs)
+			searchpath := L.GetField(packagemod, "path").String()
+			pattern := regexp.MustCompile(`^\.` + lua.LuaDirSep)
+			for _, path := range strings.Split(searchpath, ";") {
+				path = pattern.ReplaceAllString(path, dir)
+				path = strings.TrimPrefix(path, dir)
+				path = strings.TrimSuffix(path, ".lua")
+				path = strings.ReplaceAll(path, "?", name)
+				path = strings.ReplaceAll(path, lua.LuaDirSep, ".")
+				if module, ok = sm.get(path); ok {
+					break
+				}
+			}
 			if !ok {
 				L.Push(lua.LString(fmt.Sprintf("no cached module '%s'", name)))
 				return 1
