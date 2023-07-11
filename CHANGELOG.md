@@ -5,6 +5,10 @@ The format is based on [keep a changelog](http://keepachangelog.com) and this pr
 
 ## [Unreleased]
 
+## [0.1.6] - 2023-07-11
+### Changed
+- Use Global LUA_PATH instead
+
 ## [0.1.5] - 2023-07-11
 ### Added
 - Takes advantage of package path for better folder structure organize
