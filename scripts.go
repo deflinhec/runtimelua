@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -384,11 +383,7 @@ func (sm *localScriptModule) OpenPackage() lua.LGFunction {
 			var ok bool
 			var module *localFileCache
 			dir := lua.LuaLDir + lua.LuaDirSep
-			packagemod := L.RegisterModule(lua.LoadLibName, loFuncs)
-			searchpath := L.GetField(packagemod, "path").String()
-			pattern := regexp.MustCompile(`^\.` + lua.LuaDirSep)
-			for _, path := range strings.Split(searchpath, ";") {
-				path = pattern.ReplaceAllString(path, dir)
+			for _, path := range strings.Split(lua.LuaPathDefault, ";") {
 				path = strings.TrimPrefix(path, dir)
 				path = strings.TrimSuffix(path, ".lua")
 				path = strings.ReplaceAll(path, "?", name)
