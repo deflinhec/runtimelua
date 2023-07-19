@@ -5,6 +5,13 @@ The format is based on [keep a changelog](http://keepachangelog.com) and this pr
 
 ## [Unreleased]
 
+## [0.1.7] - 2023-07-19
+### Changed
+- Upgrade gopher-lua
+
+### Fixed
+- Lua Coroutine lib context leak
+
 ## [0.1.6] - 2023-07-11
 ### Changed
 - Use Global LUA_PATH instead
