@@ -7,7 +7,7 @@ require (
 	github.com/dietsche/rfsnotify v0.0.0-20200716145600-b37be6e4177f
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/uuid v1.3.0
-	github.com/yuin/gopher-lua v0.0.0-20221210110428-332342483e3f
+	github.com/yuin/gopher-lua v1.1.1-0.20230530170747-2b3f02d91730
 	go.uber.org/zap v1.24.0
 	gopkg.in/zeromq/goczmq.v4 v4.1.0
 )
